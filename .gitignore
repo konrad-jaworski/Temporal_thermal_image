@@ -2,3 +2,4 @@ venv/
 *.pt
 *.pth
 *.np
+*.npz
