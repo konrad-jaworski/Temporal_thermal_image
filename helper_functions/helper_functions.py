@@ -1,4 +1,5 @@
 import numpy as np
+import random
 import torch
 
 class NoiseAddition:
@@ -21,10 +22,10 @@ class DataNormalization:
         self.deltaT_max=deltaT_max
 
     def normalize(self, data):
-        return (data - self.T_min) / (self.T_max - self.T_min)
+        return (data - self.deltaT_min) / (self.deltaT_max - self.deltaT_min)
     
     def denormalize(self, data_normalized):
-        return data_normalized * (self.T_max - self.T_min) + self.T_min
+        return data_normalized * (self.deltaT_max - self.deltaT_min) + self.deltaT_min
     
 class Interpolate:
     """
@@ -35,7 +36,41 @@ class Interpolate:
         self.mode = mode
 
     def interpolate(self, data):
-        data = data.unsqueeze(0).unsqueeze(0)  # add batch and channel dimensions
+        
         data_interpolated = torch.nn.functional.interpolate(data, size=self.size, mode=self.mode, align_corners=False)
-        return data_interpolated.squeeze(0).squeeze(0)  # remove batch and channel dimensions
+        return data_interpolated
     
+class RandomHorizontalFlipBscan:
+    """
+    Randomly flips B-scan data along spatial width (W).
+    Applies consistently to:
+      - X: [T, W]
+      - mask: [W]
+      - depth: [W]
+    """
+
+    def __init__(self, p=0.5):
+        self.p = p
+
+    def __call__(self, X, mask, depth):
+        """
+        Parameters:
+        -----------
+        X : torch.Tensor
+            Shape [T, W]
+        mask : torch.Tensor
+            Shape [W]
+        depth : torch.Tensor
+            Shape [W]
+
+        Returns:
+        --------
+        X, mask, depth : torch.Tensor
+            Possibly flipped tensors
+        """
+        if random.random() < self.p:
+            X = torch.flip(X, dims=[1])      # flip W
+            mask = torch.flip(mask, dims=[0])
+            depth = torch.flip(depth, dims=[0])
+
+        return X, mask, depth
