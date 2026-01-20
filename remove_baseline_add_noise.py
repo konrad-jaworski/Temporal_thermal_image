@@ -54,8 +54,8 @@ def preprocess_deltaT(
     
     print(f"Preprocessing done. Files saved to {output_folder}")
 
-input_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\all_data"
-output_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\all_data_no_base_add_noise"
+input_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\all_data_same_length"
+output_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\all_data_same_length_no_base_add_noise"
 baseline_frames = 4  # you can change this
 
 preprocess_deltaT(input_folder, output_folder, baseline_frames)

@@ -4,7 +4,7 @@ import glob
 mins = []
 maxs = []
 
-for f in glob.glob(r"E:\Simulated_and_experimental_data\Synthetic_data\all_data/*.npz"):
+for f in glob.glob(r"E:\Simulated_and_experimental_data\Synthetic_data\all_data_same_length_no_base_add_noise/*.npz"):
     d = np.load(f)["data"]   # adapt key name
     mins.append(d.min())
     maxs.append(d.max())
