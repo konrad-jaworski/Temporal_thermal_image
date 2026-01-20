@@ -3,3 +3,4 @@ venv/
 *.pth
 *.np
 *.npz
+*.pyc
