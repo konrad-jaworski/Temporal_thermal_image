@@ -40,7 +40,7 @@ def main():
     # Optimizer
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
-    num_epochs = 10
+    num_epochs = 1
     best_loss = float('inf')
     save_path = r"C:\Users\stone\Temporal_thermal_image\Unet_small_kernel.pth"
 
@@ -56,7 +56,7 @@ def main():
 
             optimizer.zero_grad()
             output = model(bscan)      # [B,W]
-
+            print(output.size())
             loss = criterion(output, depth)
             loss.backward()
             optimizer.step()
