@@ -4,14 +4,14 @@ import torch
 
 class NoiseAddition:
     """
-    Class to add Gaussian noise to data.
+    Add Gaussian noise to B-scan only, keep depth unchanged.
     """
     def __init__(self, noise_level=0.05):
         self.noise_level = noise_level
 
-    def __call__(self, data):
-        noise = torch.randn_like(data) * self.noise_level
-        return data + noise
+    def __call__(self, bscan, depth):
+        noise = torch.randn_like(bscan) * self.noise_level
+        return bscan + noise, depth
     
 class DataNormalization:
     """
@@ -37,8 +37,8 @@ class Interpolate:
 
     def __call__(self, data):
         
-        data_interpolated = torch.nn.functional.interpolate(data, size=self.size, mode=self.mode, align_corners=False)
-        return data_interpolated
+        data_interpolated = torch.nn.functional.interpolate(data.unsqueeze(0), size=self.size, mode=self.mode, align_corners=False)
+        return data_interpolated.squeeze(0)
     
 class RandomHorizontalFlipBscan:
     """

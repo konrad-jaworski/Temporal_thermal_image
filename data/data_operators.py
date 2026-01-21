@@ -72,10 +72,10 @@ class BScanDepthDataset(Dataset):
         #- Interpolate
         #- Copy the our image to smae channels dimmensions 
         bscan = self.normalizer.normalize(bscan)   
-        bscan = bscan.unsqueeze(0).unsqueeze(0)  # [1, 1, H, W]
-        bscan = self.resize(bscan)               # [1, 1, 512, W]
-        bscan=bscan.repeat(1,3,1,1)             # [1, 3, 512, W]
-        
+        bscan = bscan.unsqueeze(0)  # [ 1, H, W]
+        bscan = self.resize(bscan)               # [ 1, 512, W]
+        bscan=bscan.repeat(3,1,1)             # [ 3, 512, W]
+        bscan = bscan.float()
 
         # --------------------------------------------------
         # AUGMENTATION HOOK (data + depth together)
@@ -86,6 +86,7 @@ class BScanDepthDataset(Dataset):
         if self.transform is not None:
             bscan, depth = self.transform(bscan, depth)
 
-        depth=depth.unsqueeze(0).unsqueeze(0)  # [1, 1, W]
-
+        depth=depth.unsqueeze(0)  # [ 1, W]
+        depth=depth.float()
+        
         return bscan, depth
