@@ -35,7 +35,7 @@ class Interpolate:
         self.size = size
         self.mode = mode
 
-    def interpolate(self, data):
+    def __call__(self, data):
         
         data_interpolated = torch.nn.functional.interpolate(data, size=self.size, mode=self.mode, align_corners=False)
         return data_interpolated
@@ -69,8 +69,8 @@ class RandomHorizontalFlipBscan:
             Possibly flipped tensors
         """
         if random.random() < self.p:
-            X = torch.flip(X, dims=[1])      # flip W
-            mask = torch.flip(mask, dims=[0])
-            depth = torch.flip(depth, dims=[0])
+            X = torch.flip(X, dims=[-1])      # flip W
+            mask = torch.flip(mask, dims=[-1])
+            depth = torch.flip(depth, dims=[-1])
 
         return X, mask, depth
