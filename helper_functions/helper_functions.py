@@ -9,7 +9,7 @@ class NoiseAddition:
     def __init__(self, noise_level=0.05):
         self.noise_level = noise_level
 
-    def add_noise(self, data):
+    def __call__(self, data):
         noise = torch.randn_like(data) * self.noise_level
         return data + noise
     
@@ -52,7 +52,7 @@ class RandomHorizontalFlipBscan:
     def __init__(self, p=0.5):
         self.p = p
 
-    def __call__(self, X, mask, depth):
+    def __call__(self, X, mask):
         """
         Parameters:
         -----------
@@ -71,6 +71,4 @@ class RandomHorizontalFlipBscan:
         if random.random() < self.p:
             X = torch.flip(X, dims=[-1])      # flip W
             mask = torch.flip(mask, dims=[-1])
-            depth = torch.flip(depth, dims=[-1])
-
-        return X, mask, depth
+        return X, mask

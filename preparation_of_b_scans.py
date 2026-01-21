@@ -72,10 +72,10 @@ def extract_rowwise_bscan_and_targets(
     print(f"Done. Saved {sample_counter} row-wise samples.")
 
 
-input_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\all_data_same_length_no_base_add_noise"
-output_X_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\B-scans\data"
-output_Y_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\B-scans\detection"
-output_depth_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\B-scans\depth"
+input_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\all_data_same_length_no_base_add_noise_test"
+output_X_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\B-scans_test\data"
+output_Y_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\B-scans_test\detection"
+output_depth_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\B-scans_test\depth"
 
 lower_bound = 180
 upper_bound = 230
