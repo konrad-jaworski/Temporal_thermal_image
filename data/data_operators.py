@@ -86,7 +86,6 @@ class BScanDepthDataset(Dataset):
         if self.transform is not None:
             bscan, depth = self.transform(bscan, depth)
 
-        depth=depth.unsqueeze(0)  # [ 1, W]
         depth=depth.float()
         
         return bscan, depth

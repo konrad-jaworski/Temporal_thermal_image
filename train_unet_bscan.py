@@ -15,6 +15,10 @@ def main():
         NoiseAddition(noise_level=0.05),
     ])
 
+    val_transforms = ComposeBScanTransforms([
+        NoiseAddition(noise_level=0.05)
+    ])
+
     train_dataset = BScanDepthDataset(
         bscan_dir=r"E:\Simulated_and_experimental_data\Synthetic_data\B-scans_train\data",
         depth_dir=r"E:\Simulated_and_experimental_data\Synthetic_data\B-scans_train\depth",
@@ -22,8 +26,23 @@ def main():
         normalization_path=r"C:\Users\stone\Temporal_thermal_image\normalization_params.npz"
     )
 
+    val_dataset = BScanDepthDataset(
+        bscan_dir=r"E:\Simulated_and_experimental_data\Synthetic_data\B-scans_val\data",
+        depth_dir=r"E:\Simulated_and_experimental_data\Synthetic_data\B-scans_val\depth",
+        transform=val_transforms,
+        normalization_path=r"C:\Users\stone\Temporal_thermal_image\normalization_params.npz"
+    )
+
     train_loader = DataLoader(
         train_dataset,
+        batch_size=8,
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True
+    )
+
+    val_loader = DataLoader(
+        val_dataset,
         batch_size=8,
         shuffle=True,
         num_workers=4,
@@ -37,26 +56,48 @@ def main():
     # Loss function (per-column regression)
     criterion = nn.MSELoss()  # Could use L1Loss or HuberLoss if preferred
 
-    # Optimizer
-    optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    for p in model.unet.encoder.parameters():
+        p.requires_grad = False
 
-    num_epochs = 1
+    # Optimizer
+    optimizer = optim.Adam(
+        filter(lambda p: p.requires_grad, model.parameters()),
+        lr=1e-3
+    )
+
+
+    num_epochs = 300
     best_loss = float('inf')
     save_path = r"C:\Users\stone\Temporal_thermal_image\Unet_small_kernel.pth"
 
-    for epoch in range(num_epochs):
-        model.train()
-        running_loss = 0.0
-        
-        loop = tqdm(train_loader, desc=f"Epoch [{epoch+1}/{num_epochs}]", leave=False)
+    # Early stopping parameters
+    patience = 20        # epochs to wait
+    min_delta = 1e-4      # minimum improvement
+    counter = 0
 
-        for bscan, depth in loop:
+    # Pre-training parameters
+    phase = 1   
+    phase1_epochs = 50
+
+    train_log=[]
+    val_log=[]
+
+
+
+    for epoch in tqdm(range(num_epochs), desc=f"Epochs", leave=False):
+        model.train()
+       
+        if phase == 1:
+            model.unet.encoder.eval()
+        
+        running_loss = 0.0
+
+        for bscan, depth in tqdm(train_loader, desc=f"Epoch {epoch+1} Batches", leave=False):
             bscan = bscan.to(device)   # [B,3,H,W]
             depth = depth.to(device)   # [B,W]
 
             optimizer.zero_grad()
             output = model(bscan)      # [B,W]
-            print(output.size())
             loss = criterion(output, depth)
             loss.backward()
             optimizer.step()
@@ -64,12 +105,59 @@ def main():
             running_loss += loss.item() * bscan.size(0)
 
         epoch_loss = running_loss / len(train_loader.dataset)
-        print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.6f}")
+        train_log.append(epoch_loss)
+        
 
-        if epoch_loss < best_loss:
-            best_loss = epoch_loss
+        # Validation
+        model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for bscan, depth in tqdm(val_loader, desc=f"Epoch {epoch+1} Val Batches", leave=False):
+                bscan = bscan.to(device)
+                depth = depth.to(device)
+
+                output = model(bscan)
+                loss = criterion(output, depth)
+                val_loss += loss.item() * bscan.size(0)
+        
+        val_epoch_loss = val_loss / len(val_loader.dataset)
+        val_log.append(val_epoch_loss)
+
+        # ===== Switch to Phase 2 =====
+        if phase == 1 and epoch >= phase1_epochs:
+            print("Switching to Phase 2: unfreezing encoder layer4")
+
+            for p in model.unet.encoder.layer4.parameters():
+                p.requires_grad = True
+
+            optimizer = optim.Adam([
+                {"params": model.unet.encoder.layer4.parameters(), "lr": 1e-4},  # fine-tune last encoder block
+                {"params": model.unet.decoder.parameters(), "lr": 5e-4},         # decoder
+                {"params": model.vertical_proj.parameters(), "lr": 5e-4},        # vertical projection
+                {"params": model.regressor.parameters(), "lr": 5e-4},            # final regression head
+            ])
+
+            model.unet.encoder.layer4.train()
+            phase = 2
+            counter = 0      # reset early stopping
+            best_loss = float('inf')
+         
+        print(f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {epoch_loss:.6f}, Val Loss: {val_epoch_loss:.6f}")
+
+        if val_epoch_loss < best_loss - min_delta:
+            best_loss = val_epoch_loss
+            counter = 0
             torch.save(model.state_dict(), save_path)
             print(f"Saved new best model with loss {best_loss:.6f} at {save_path}")
+        else:
+            counter+=1
+
+        if counter >= patience:
+            print("Early stopping triggered.")
+            break    
+        
+    torch.save(train_log,'train_log.pt')
+    torch.save(val_log, 'val_log.pt')
 
 if __name__ == "__main__":
     import multiprocessing
