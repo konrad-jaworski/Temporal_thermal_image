@@ -4,7 +4,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from helper_functions.helper_functions import RandomHorizontalFlipBscan, NoiseAddition
 from data.data_operators import BScanDepthDataset, ComposeBScanTransforms
-from networks.Unets import BnetSmallKernel
+from networks.Unets import BnetSmallKernel, BnetBigKernel, BnetMean
 from tqdm import tqdm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -16,7 +16,7 @@ def main():
     ])
 
     val_transforms = ComposeBScanTransforms([
-        NoiseAddition(noise_level=0.05)
+        # NoiseAddition(noise_level=0.05)
     ])
 
     train_dataset = BScanDepthDataset(
@@ -51,33 +51,36 @@ def main():
 
     # Your UNet-based regressor
     model = BnetSmallKernel()
+    # model= BnetBigKernel()
+    # model = BnetMean()
     model.to(device)
 
     # Loss function (per-column regression)
     criterion = nn.MSELoss()  # Could use L1Loss or HuberLoss if preferred
 
-    for p in model.unet.encoder.parameters():
-        p.requires_grad = False
+    # for p in model.unet.encoder.parameters():
+    #     p.requires_grad = False
 
     # Optimizer
-    optimizer = optim.Adam(
-        filter(lambda p: p.requires_grad, model.parameters()),
-        lr=1e-3
-    )
+    # optimizer = optim.Adam(
+    #     filter(lambda p: p.requires_grad, model.parameters()),
+    #     lr=1e-3
+    # )
 
+    optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
-    num_epochs = 300
+    num_epochs = 500
     best_loss = float('inf')
     save_path = r"C:\Users\stone\Temporal_thermal_image\Unet_small_kernel.pth"
 
     # Early stopping parameters
-    patience = 20        # epochs to wait
+    patience = 100        # epochs to wait
     min_delta = 1e-4      # minimum improvement
     counter = 0
 
     # Pre-training parameters
     phase = 1   
-    phase1_epochs = 50
+    phase1_epochs = 10
 
     train_log=[]
     val_log=[]
@@ -87,8 +90,8 @@ def main():
     for epoch in tqdm(range(num_epochs), desc=f"Epochs", leave=False):
         model.train()
        
-        if phase == 1:
-            model.unet.encoder.eval()
+        # if phase == 1:
+        #     model.unet.encoder.eval()
         
         running_loss = 0.0
 
@@ -123,24 +126,24 @@ def main():
         val_epoch_loss = val_loss / len(val_loader.dataset)
         val_log.append(val_epoch_loss)
 
-        # ===== Switch to Phase 2 =====
-        if phase == 1 and epoch >= phase1_epochs:
-            print("Switching to Phase 2: unfreezing encoder layer4")
+        # # ===== Switch to Phase 2 =====
+        # if phase == 1 and epoch >= phase1_epochs:
+        #     print("Switching to Phase 2: unfreezing encoder layer4")
 
-            for p in model.unet.encoder.layer4.parameters():
-                p.requires_grad = True
+        #     for p in model.unet.encoder.layer4.parameters():
+        #         p.requires_grad = True
 
-            optimizer = optim.Adam([
-                {"params": model.unet.encoder.layer4.parameters(), "lr": 1e-4},  # fine-tune last encoder block
-                {"params": model.unet.decoder.parameters(), "lr": 5e-4},         # decoder
-                {"params": model.vertical_proj.parameters(), "lr": 5e-4},        # vertical projection
-                {"params": model.regressor.parameters(), "lr": 5e-4},            # final regression head
-            ])
+        #     optimizer = optim.Adam([
+        #         {"params": model.unet.encoder.layer4.parameters(), "lr": 1e-4},  # fine-tune last encoder block
+        #         {"params": model.unet.decoder.parameters(), "lr": 5e-4},         # decoder
+        #         {"params": model.vertical_proj.parameters(), "lr": 5e-4},        # vertical projection
+        #         {"params": model.regressor.parameters(), "lr": 5e-4},            # final regression head
+        #     ])
 
-            model.unet.encoder.layer4.train()
-            phase = 2
-            counter = 0      # reset early stopping
-            best_loss = float('inf')
+        #     model.unet.encoder.layer4.train()
+        #     phase = 2
+        #     counter = 0      # reset early stopping
+        #     best_loss = float('inf')
          
         print(f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {epoch_loss:.6f}, Val Loss: {val_epoch_loss:.6f}")
 
