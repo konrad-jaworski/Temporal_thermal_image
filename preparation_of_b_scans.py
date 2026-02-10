@@ -77,8 +77,8 @@ output_X_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\B-scans_va
 output_Y_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\B-scans_val\detection"
 output_depth_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\B-scans_val\depth"
 
-lower_bound = 180
-upper_bound = 230
+lower_bound = 400
+upper_bound = 500
 
 extract_rowwise_bscan_and_targets(
     input_folder,

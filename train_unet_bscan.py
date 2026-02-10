@@ -4,7 +4,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from helper_functions.helper_functions import RandomHorizontalFlipBscan, NoiseAddition
 from data.data_operators import BScanDepthDataset, ComposeBScanTransforms
-from networks.Unets import BnetSmallKernel, BnetBigKernel, BnetMean
+from networks.Unets import BnetSmallKernel, BnetBigKernel, BnetMean,CompactBnet
 from tqdm import tqdm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -53,34 +53,23 @@ def main():
     model = BnetSmallKernel()
     # model= BnetBigKernel()
     # model = BnetMean()
+    # model=CompactBnet()
     model.to(device)
 
     # Loss function (per-column regression)
     criterion = nn.MSELoss()  # Could use L1Loss or HuberLoss if preferred
-
-    # for p in model.unet.encoder.parameters():
-    #     p.requires_grad = False
-
-    # Optimizer
-    # optimizer = optim.Adam(
-    #     filter(lambda p: p.requires_grad, model.parameters()),
-    #     lr=1e-3
-    # )
+    # criterion = nn.L1Loss()
 
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
     num_epochs = 500
     best_loss = float('inf')
-    save_path = r"C:\Users\stone\Temporal_thermal_image\Unet_small_kernel.pth"
+    save_path = r"C:\Users\stone\Temporal_thermal_image\Unet_small_kernel_l2_both_classes.pth"
 
     # Early stopping parameters
     patience = 100        # epochs to wait
     min_delta = 1e-4      # minimum improvement
     counter = 0
-
-    # Pre-training parameters
-    phase = 1   
-    phase1_epochs = 10
 
     train_log=[]
     val_log=[]
@@ -90,9 +79,6 @@ def main():
     for epoch in tqdm(range(num_epochs), desc=f"Epochs", leave=False):
         model.train()
        
-        # if phase == 1:
-        #     model.unet.encoder.eval()
-        
         running_loss = 0.0
 
         for bscan, depth in tqdm(train_loader, desc=f"Epoch {epoch+1} Batches", leave=False):
@@ -126,25 +112,6 @@ def main():
         val_epoch_loss = val_loss / len(val_loader.dataset)
         val_log.append(val_epoch_loss)
 
-        # # ===== Switch to Phase 2 =====
-        # if phase == 1 and epoch >= phase1_epochs:
-        #     print("Switching to Phase 2: unfreezing encoder layer4")
-
-        #     for p in model.unet.encoder.layer4.parameters():
-        #         p.requires_grad = True
-
-        #     optimizer = optim.Adam([
-        #         {"params": model.unet.encoder.layer4.parameters(), "lr": 1e-4},  # fine-tune last encoder block
-        #         {"params": model.unet.decoder.parameters(), "lr": 5e-4},         # decoder
-        #         {"params": model.vertical_proj.parameters(), "lr": 5e-4},        # vertical projection
-        #         {"params": model.regressor.parameters(), "lr": 5e-4},            # final regression head
-        #     ])
-
-        #     model.unet.encoder.layer4.train()
-        #     phase = 2
-        #     counter = 0      # reset early stopping
-        #     best_loss = float('inf')
-         
         print(f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {epoch_loss:.6f}, Val Loss: {val_epoch_loss:.6f}")
 
         if val_epoch_loss < best_loss - min_delta:
@@ -159,8 +126,8 @@ def main():
             print("Early stopping triggered.")
             break    
         
-    torch.save(train_log,'train_log.pt')
-    torch.save(val_log, 'val_log.pt')
+    torch.save(train_log,'train_log_unet_small_kernel_big_dataset.pt')
+    torch.save(val_log, 'val_log_unet_small_kernel_big_dataset.pt')
 
 if __name__ == "__main__":
     import multiprocessing

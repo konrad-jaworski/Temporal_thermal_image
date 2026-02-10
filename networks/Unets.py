@@ -202,3 +202,51 @@ class BnetSmallKernel(nn.Module):
         out = self.regressor(feat)    # [B, 1, W]
         out = torch.sigmoid(out.squeeze(1))
         return out
+    
+class CompactBnet(nn.Module):
+    def __init__(self, in_channels=3, feature_channels=64, output_width=512):
+        super().__init__()
+        # Case which does not use a pre-trained backbone, but a simple custom CNN encoder
+        # --- Simple convolutional encoder ---
+        # Downsample height gradually while keeping width intact
+        self.encoder = nn.Sequential(
+            nn.Conv2d(in_channels, feature_channels, kernel_size=3, padding=1), # We do not downsample only extract features
+            nn.BatchNorm2d(feature_channels),
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(feature_channels, feature_channels, kernel_size=(5,3), stride=(2,1), padding=(2,1)), # Downsample height by 2 but keep width
+            nn.BatchNorm2d(feature_channels),
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(feature_channels, feature_channels, kernel_size=(5,3), stride=(2,1), padding=(2,1)), 
+            nn.BatchNorm2d(feature_channels),
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(feature_channels, feature_channels, kernel_size=(5,3), stride=(2,1), padding=(2,1)), # we end up with height = 64 if input is 512
+            nn.BatchNorm2d(feature_channels),
+            nn.ReLU(inplace=True)
+        )
+
+        # --- Vertical projection via mean ---
+        # Input: [B, C, H, W] -> Output: [B, C, W]
+        self.vertical_proj = nn.AdaptiveAvgPool2d((1, None)) # collapses of height dimension by averaging
+
+        # --- Column-wise regressor ---
+        self.regressor = nn.Sequential(
+            nn.Conv1d(feature_channels, 32, kernel_size=1),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(32, 1, kernel_size=1)
+        )
+
+        self.output_width = output_width
+
+    def forward(self, x):
+        """
+        x: [B, 3, H, W] (e.g., 512x512)
+        return: [B, W]
+        """
+        feat = self.encoder(x)                 # [B, C, H', W]
+        feat = self.vertical_proj(feat).squeeze(2)  # [B, C, W]
+        out = self.regressor(feat)             # [B, 1, W]
+        out = torch.sigmoid(out.squeeze(1))    # [B, W]
+        return out
