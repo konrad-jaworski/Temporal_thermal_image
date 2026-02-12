@@ -201,6 +201,44 @@ class BnetSmallKernel(nn.Module):
         feat = self.vertical_proj(feat)  # [B, C, W]
         out = self.regressor(feat)    # [B, 1, W]
         out = torch.sigmoid(out.squeeze(1))
+
+        return out
+    
+class BnetSmallKernelSmarter(nn.Module):
+    def __init__(
+        self,
+        encoder_name="resnet34",
+        encoder_weights="imagenet",
+        in_channels=3,
+        decoder_channels=256
+    ):
+        super().__init__()
+
+        self.unet = smp.Unet(
+            encoder_name=encoder_name,
+            encoder_weights=encoder_weights,
+            in_channels=in_channels,
+            classes=decoder_channels,
+            activation=None
+        )
+
+        self.vertical_proj = HierarchicalVerticalProjection(decoder_channels)
+
+        self.regressor_smarter = nn.Sequential(
+            nn.Conv1d(decoder_channels, 128, kernel_size=3, padding=1),
+            nn.BatchNorm1d(128),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(128, 64, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(64, 1, kernel_size=1)
+        )
+
+    def forward(self, x):
+        feat = self.unet(x)           # [B, C, H, W]
+        feat = self.vertical_proj(feat)  # [B, C, W]
+        out=self.regressor_smarter(feat) # [B, 1, W]
+        out = torch.sigmoid(out.squeeze(1))
+
         return out
     
 class CompactBnet(nn.Module):

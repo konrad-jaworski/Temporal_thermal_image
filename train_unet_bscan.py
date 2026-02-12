@@ -4,7 +4,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from helper_functions.helper_functions import RandomHorizontalFlipBscan, NoiseAddition
 from data.data_operators import BScanDepthDataset, ComposeBScanTransforms
-from networks.Unets import BnetSmallKernel, BnetBigKernel, BnetMean,CompactBnet
+from networks.Unets import BnetSmallKernel, BnetBigKernel, BnetMean,CompactBnet,BnetSmallKernelSmarter
 from tqdm import tqdm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -37,7 +37,7 @@ def main():
         train_dataset,
         batch_size=8,
         shuffle=True,
-        num_workers=4,
+        num_workers=0,
         pin_memory=True
     )
 
@@ -45,12 +45,13 @@ def main():
         val_dataset,
         batch_size=8,
         shuffle=True,
-        num_workers=4,
+        num_workers=0,
         pin_memory=True
     )
 
     # Your UNet-based regressor
-    model = BnetSmallKernel()
+    # model = BnetSmallKernel()
+    model=BnetSmallKernelSmarter()
     # model= BnetBigKernel()
     # model = BnetMean()
     # model=CompactBnet()
@@ -64,7 +65,7 @@ def main():
 
     num_epochs = 500
     best_loss = float('inf')
-    save_path = r"C:\Users\stone\Temporal_thermal_image\Unet_small_kernel_l2_both_classes.pth"
+    save_path = r"C:\Users\stone\Temporal_thermal_image\Unet_small_kernel_smarter_l2_both_classes.pth"
 
     # Early stopping parameters
     patience = 100        # epochs to wait
@@ -126,8 +127,8 @@ def main():
             print("Early stopping triggered.")
             break    
         
-    torch.save(train_log,'train_log_unet_small_kernel_big_dataset.pt')
-    torch.save(val_log, 'val_log_unet_small_kernel_big_dataset.pt')
+    torch.save(train_log,'train_log_unet_small_kernel_smarter_big_dataset.pt')
+    torch.save(val_log, 'val_log_unet_small_kernel_smarter_big_dataset.pt')
 
 if __name__ == "__main__":
     import multiprocessing
