@@ -4,3 +4,4 @@ venv/
 *.np
 *.npz
 *.pyc
+*.DS_Store
