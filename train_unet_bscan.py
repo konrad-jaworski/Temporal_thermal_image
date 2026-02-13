@@ -37,7 +37,7 @@ def main():
         train_dataset,
         batch_size=8,
         shuffle=True,
-        num_workers=0,
+        num_workers=8,
         pin_memory=True
     )
 
@@ -45,7 +45,7 @@ def main():
         val_dataset,
         batch_size=8,
         shuffle=True,
-        num_workers=0,
+        num_workers=8,
         pin_memory=True
     )
 
@@ -68,7 +68,7 @@ def main():
     save_path = r"C:\Users\stone\Temporal_thermal_image\Unet_small_kernel_smarter_l2_both_classes.pth"
 
     # Early stopping parameters
-    patience = 100        # epochs to wait
+    patience = 50        # epochs to wait
     min_delta = 1e-4      # minimum improvement
     counter = 0
 
