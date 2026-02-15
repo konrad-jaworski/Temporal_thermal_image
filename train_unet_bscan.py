@@ -4,7 +4,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from helper_functions.helper_functions import RandomHorizontalFlipBscan, NoiseAddition
 from data.data_operators import BScanDepthDataset, ComposeBScanTransforms
-from networks.Unets import BnetSmallKernel, BnetBigKernel, BnetMean,CompactBnet,BnetSmallKernelSmarter
+from networks.Unets import BnetSmallKernel, BnetMean,CompactBnet,BnetSmallKernelSmarter,BnetTiny
 from tqdm import tqdm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -51,24 +51,24 @@ def main():
 
     # Your UNet-based regressor
     # model = BnetSmallKernel()
-    model=BnetSmallKernelSmarter()
-    # model= BnetBigKernel()
+    # model=BnetSmallKernelSmarter()
     # model = BnetMean()
     # model=CompactBnet()
+    model=BnetTiny()
     model.to(device)
 
     # Loss function (per-column regression)
     criterion = nn.MSELoss()  # Could use L1Loss or HuberLoss if preferred
     # criterion = nn.L1Loss()
 
-    optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
     num_epochs = 500
     best_loss = float('inf')
-    save_path = r"C:\Users\stone\Temporal_thermal_image\Unet_small_kernel_smarter_l2_both_classes.pth"
+    save_path = r"C:\Users\stone\Temporal_thermal_image\Unet_bnettiny_l2_both_classes.pth"
 
     # Early stopping parameters
-    patience = 50        # epochs to wait
+    patience = 100        # epochs to wait
     min_delta = 1e-4      # minimum improvement
     counter = 0
 
@@ -127,8 +127,8 @@ def main():
             print("Early stopping triggered.")
             break    
         
-    torch.save(train_log,'train_log_unet_small_kernel_smarter_big_dataset.pt')
-    torch.save(val_log, 'val_log_unet_small_kernel_smarter_big_dataset.pt')
+    torch.save(train_log,'train_log_unet_bnettiny_big_dataset.pt')
+    torch.save(val_log, 'val_log_unet_bnettiny_big_dataset.pt')
 
 if __name__ == "__main__":
     import multiprocessing
