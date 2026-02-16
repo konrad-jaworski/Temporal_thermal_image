@@ -48,11 +48,6 @@ def preprocess_deltaT(
         # subtract baseline
         deltaT = data_tr - T0
 
-        # Add noise
-        noise_level = np.random.uniform(0.01, 0.1)
-        noise = np.random.randn(*deltaT.shape) * noise_level
-        deltaT += noise
-
         # Prepare dictionary to save
         save_dict = {key: data_npz[key] for key in data_npz.files}  # copy all keys
         save_dict['data'] = deltaT  # replace 'data' key
@@ -63,8 +58,8 @@ def preprocess_deltaT(
     
     print(f"Preprocessing done. Files saved to {output_folder}")
 
-input_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\all_data_same_length"
-output_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\all_data_same_length_no_base_add_noise"
-baseline_frames = 4  # you can change this
+input_folder = r"/Volumes/KINGSTON/Two_real_samples/thick_sample_5s"
+output_folder = r"/Volumes/KINGSTON/Two_real_samples/thick_sample_5s/thick_sample_5s_remove_base"
+baseline_frames = 12  # you can change this
 
 preprocess_deltaT(input_folder, output_folder, baseline_frames)
