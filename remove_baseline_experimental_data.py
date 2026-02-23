@@ -58,8 +58,8 @@ def preprocess_deltaT(
     
     print(f"Preprocessing done. Files saved to {output_folder}")
 
-input_folder = r"/Volumes/KINGSTON/Two_real_samples/thick_sample_5s"
-output_folder = r"/Volumes/KINGSTON/Two_real_samples/thick_sample_5s/thick_sample_5s_remove_base"
+input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Two_real_samples/thick_sample_10s"
+output_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Two_real_samples/thick_sample_10s_remove_base"
 baseline_frames = 12  # you can change this
 
 preprocess_deltaT(input_folder, output_folder, baseline_frames)

@@ -1,3 +1,4 @@
+venv-3.11/
 venv/
 *.pt
 *.pth
@@ -5,3 +6,7 @@ venv/
 *.npz
 *.pyc
 *.DS_Store
+*.python-version
+__pycache__/
+.ipynb_checkpoints/*
+.python-version

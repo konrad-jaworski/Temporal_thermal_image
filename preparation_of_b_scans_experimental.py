@@ -63,11 +63,11 @@ def extract_rowwise_bscan_and_targets(
     print(f"Done. Saved {sample_counter} row-wise samples.")
 
 
-input_folder = r"/Volumes/KINGSTON/Models_lc_and_test_data/all_data_same_length_no_base_add_noise_test/Test_sample_sim_4mm"
-output_X_folder = r"/Volumes/KINGSTON/Models_lc_and_test_data/all_data_same_length_no_base_add_noise_test/Test_sample_sim_4mm"
+input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Models_lc_and_test_data/all_data_same_length_no_base_add_noise_test/Test_sample_sim_4_mm_different_length/Preprocessed"
+output_X_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Models_lc_and_test_data/all_data_same_length_no_base_add_noise_test/Test_sample_sim_4_mm_different_length/Preprocessed/B_scans"
 
 lower_bound = 0
-upper_bound = 511
+upper_bound = 512
 
 extract_rowwise_bscan_and_targets(
     input_folder,
