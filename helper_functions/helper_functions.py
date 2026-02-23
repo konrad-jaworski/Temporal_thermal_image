@@ -6,39 +6,14 @@ class NoiseAddition:
     """
     Add Gaussian noise to B-scan only, keep depth unchanged.
     """
-    def __init__(self, noise_level=0.05):
-        self.noise_level = noise_level
+    def __init__(self, sigma_min=0.15, sigma_max=1.5):
+        self.sigma_min = sigma_min
+        self.sigma_max = sigma_max
 
     def __call__(self, bscan, depth):
-        noise = torch.randn_like(bscan) * self.noise_level
+        sigma = torch.empty(1).uniform_(self.sigma_min, self.sigma_max).item()
+        noise = torch.randn_like(bscan) * sigma
         return bscan + noise, depth
-    
-class DataNormalization:
-    """
-    Normalize and denormalize data based on provided min and max values.
-    """
-    def __init__(self,deltaT_min,deltaT_max):
-        self.deltaT_min=deltaT_min
-        self.deltaT_max=deltaT_max
-
-    def normalize(self, data):
-        return (data - self.deltaT_min) / (self.deltaT_max - self.deltaT_min)
-    
-    def denormalize(self, data_normalized):
-        return data_normalized * (self.deltaT_max - self.deltaT_min) + self.deltaT_min
-    
-class Interpolate:
-    """
-    Interpolate data to a new size using PyTorch's interpolate function.
-    """
-    def __init__(self, size, mode='bilinear'):
-        self.size = size
-        self.mode = mode
-
-    def __call__(self, data):
-        
-        data_interpolated = torch.nn.functional.interpolate(data.unsqueeze(0), size=self.size, mode=self.mode, align_corners=False)
-        return data_interpolated.squeeze(0)
     
 class RandomHorizontalFlipBscan:
     """
@@ -72,6 +47,36 @@ class RandomHorizontalFlipBscan:
             X = torch.flip(X, dims=[-1])      # flip W
             mask = torch.flip(mask, dims=[-1])
         return X, mask
+    
+
+    
+class DataNormalization:
+    """
+    Normalize and denormalize data based on provided min and max values.
+    """
+    def __init__(self,deltaT_min,deltaT_max):
+        self.deltaT_min=deltaT_min
+        self.deltaT_max=deltaT_max
+
+    def normalize(self, data):
+        return (data - self.deltaT_min) / (self.deltaT_max - self.deltaT_min)
+    
+    def denormalize(self, data_normalized):
+        return data_normalized * (self.deltaT_max - self.deltaT_min) + self.deltaT_min
+    
+class Interpolate:
+    """
+    Interpolate data to a new size using PyTorch's interpolate function.
+    """
+    def __init__(self, size, mode='bilinear'):
+        self.size = size
+        self.mode = mode
+
+    def __call__(self, data):
+        
+        data_interpolated = torch.nn.functional.interpolate(data.unsqueeze(0), size=self.size, mode=self.mode, align_corners=False)
+        return data_interpolated.squeeze(0)
+    
     
 class TSR_extrapolation:
     """
