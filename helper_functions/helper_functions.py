@@ -129,6 +129,41 @@ class RandomGaussianBlur:
         return X.squeeze(0), mask
     
 
+class LocalDeltaTBiasColumns:
+    def __init__(self, p=0.5, width_range=(50, 500), bias_range=(0.1, 1.0),
+                 smooth_edges=50):
+        self.p = p
+        self.width_range = width_range
+        self.bias_range = bias_range
+        self.smooth_edges = smooth_edges
+        
+
+    def __call__(self, X, mask):
+        if random.random() >= self.p:
+            return X, mask
+
+        H, W = X.shape
+        band_w = random.randint(max(1, self.width_range[0]), min(W, self.width_range[1]))
+        
+        x0 = random.randint(0, W - band_w)
+
+        x1 = x0 + band_w
+        delta = random.uniform(*self.bias_range)
+
+        X_out = X.clone()
+
+        k = min(self.smooth_edges, band_w // 2)
+        if k > 0:
+            weights = torch.ones(band_w, device=X.device, dtype=X.dtype)
+            ramp = torch.linspace(0, 1, steps=k, device=X.device, dtype=X.dtype)
+            weights[:k] = ramp
+            weights[-k:] = torch.flip(ramp, dims=[0])
+            X_out[:, x0:x1] += delta * weights.view(1, -1)
+        else:
+            X_out[:, x0:x1] += delta
+
+        return X_out, mask
+
 class DataNormalization:
     """
     Normalize and denormalize data based on provided min and max values.
