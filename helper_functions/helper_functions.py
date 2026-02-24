@@ -68,10 +68,40 @@ class HorizontalShift:
     """
     Class which shift sample horizontally
     """
-    def __init__(self,p=0.5,min_shift=20,max_shift=100):
+    def __init__(self,p=0.5,min_shift=250,max_shift=450):
         self.p=p
         self.min_shift=min_shift
-        self.max_shift=max
+        self.max_shift=max_shift
+
+    def __call__(self,X,mask):
+        if random.random() < self.p:
+            H,W=X.size()
+
+            # Our background which will be all zeros and that is ok since we removed room temperature
+            back_ground=torch.zeros_like(X)
+            mask_ground=torch.zeros_like(mask)
+
+            # index from which point do we shift the image
+            idx = torch.randint(low=self.min_shift, high=self.max_shift, size=(1,))
+
+            # Decision do we shift left or right
+            if random.random() < 0.5:
+                # Move the sample to the left out of the window
+                X_shifted=torch.cat((back_ground[:,idx:],X[:,:idx]),dim=1)
+                # Shifting the mask also
+                mask_shifted=torch.cat((mask_ground[idx:],mask[:idx]),dim=0)
+                
+            elif random.random() > 0.5:
+                # Move the sample to the right out of the window
+                X_shifted=torch.cat((back_ground[:,idx:],X[:,:idx]),dim=1)
+                mask_shifted=torch.cat((mask_ground[idx:],mask[:idx]),dim=0)
+                
+                # Flipping motion of sample to the right direction
+                X_shifted=torch.flip(X_shifted,dims=[-1])
+                mask_shifted=torch.flip(mask_shifted,dims=[-1])
+
+
+        return X_shifted,mask_shifted
     
 class DataNormalization:
     """
