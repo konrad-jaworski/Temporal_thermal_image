@@ -1,6 +1,8 @@
 import numpy as np
 import random
 import torch
+import torchvision.transforms.functional as TF
+
 
 class NoiseAddition:
     """
@@ -59,50 +61,74 @@ class TwoDefect:
             W_center=W//2
             X_flip=torch.flip(X,dims=[-1])
             mask_flip=torch.flip(mask,dims=[-1])
-
-            X_new=torch.cat((X[:,:W_center],X_flip[:,W_center:]),dim=1)
-            mask_new=torch.cat((mask[:W_center],mask_flip[W_center:]),dim=0)
-        return X_new, mask_new
+            if X[:,0].sum()==0:
+                X_new=torch.cat((X[:,W_center:],X_flip[:,:W_center]),dim=1)
+                mask_new=torch.cat((mask[W_center:],mask_flip[:W_center]),dim=0)
+            else:
+                X_new=torch.cat((X[:,:W_center],X_flip[:,W_center:]),dim=1)
+                mask_new=torch.cat((mask[:W_center],mask_flip[W_center:]),dim=0)
+            return X_new, mask_new
+        else:
+            return X,mask
 
 class HorizontalShift:
     """
-    Class which shift sample horizontally
+    Shift sample horizontally (zero-padded).
+    X: (H, W)
+    mask: (W,)   (as in your code)
     """
-    def __init__(self,p=0.5,min_shift=250,max_shift=450):
-        self.p=p
-        self.min_shift=min_shift
-        self.max_shift=max_shift
+    def __init__(self, p=0.5, min_shift=50, max_shift=256):
+        self.p = p
+        self.min_shift = min_shift
+        self.max_shift = max_shift
 
-    def __call__(self,X,mask):
+    def __call__(self, X, mask):
+        # Always return 3 things
+        idx = 0
+
         if random.random() < self.p:
-            H,W=X.size()
+            H, W = X.size()
 
-            # Our background which will be all zeros and that is ok since we removed room temperature
-            back_ground=torch.zeros_like(X)
-            mask_ground=torch.zeros_like(mask)
+            back_ground = torch.zeros_like(X)
+            mask_ground = torch.zeros_like(mask)
 
-            # index from which point do we shift the image
-            idx = torch.randint(low=self.min_shift, high=self.max_shift, size=(1,))
+            # make idx a Python int
+            idx = int(torch.randint(self.min_shift, self.max_shift, (1,), device=X.device).item())
 
-            # Decision do we shift left or right
             if random.random() < 0.5:
-                # Move the sample to the left out of the window
-                X_shifted=torch.cat((back_ground[:,idx:],X[:,:idx]),dim=1)
-                # Shifting the mask also
-                mask_shifted=torch.cat((mask_ground[idx:],mask[:idx]),dim=0)
-                
-            elif random.random() > 0.5:
-                # Move the sample to the right out of the window
-                X_shifted=torch.cat((back_ground[:,idx:],X[:,:idx]),dim=1)
-                mask_shifted=torch.cat((mask_ground[idx:],mask[:idx]),dim=0)
-                
-                # Flipping motion of sample to the right direction
-                X_shifted=torch.flip(X_shifted,dims=[-1])
-                mask_shifted=torch.flip(mask_shifted,dims=[-1])
+                # shift LEFT: content moves left, zeros on right
+                X_shifted = torch.cat((X[:, idx:], back_ground[:, :idx]), dim=1)
+                mask_shifted = torch.cat((mask[idx:], mask_ground[:idx]), dim=0)
+            else:
+                # shift RIGHT: content moves right, zeros on left
+                X_shifted = torch.cat((back_ground[:, :idx], X[:, :-idx]), dim=1)
+                mask_shifted = torch.cat((mask_ground[:idx], mask[:-idx]), dim=0)
 
+            return X_shifted, mask_shifted
 
-        return X_shifted,mask_shifted
+        # no augmentation
+        return X, mask
+
+class RandomGaussianBlur:
+    def __init__(self, p=0.5, kernel_sizes=(3,5,7,9), sigma_range=(0.5, 3.0)):
+        self.p = p
+        self.kernel_sizes = kernel_sizes
+        self.sigma_range = sigma_range
+
+    def __call__(self, X, mask):
+        if random.random() < self.p:
+            # X must be (C,H,W)
+            if X.dim() == 2:
+                X = X.unsqueeze(0)
+
+            k = random.choice(self.kernel_sizes)
+            sigma = random.uniform(*self.sigma_range)
+
+            X = TF.gaussian_blur(X, kernel_size=k, sigma=sigma)
+
+        return X.squeeze(0), mask
     
+
 class DataNormalization:
     """
     Normalize and denormalize data based on provided min and max values.
