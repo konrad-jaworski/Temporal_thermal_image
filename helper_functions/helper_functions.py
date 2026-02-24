@@ -35,8 +35,6 @@ class RandomHorizontalFlipBscan:
             Shape [T, W]
         mask : torch.Tensor
             Shape [W]
-        depth : torch.Tensor
-            Shape [W]
 
         Returns:
         --------
@@ -48,7 +46,32 @@ class RandomHorizontalFlipBscan:
             mask = torch.flip(mask, dims=[-1])
         return X, mask
     
+class TwoDefect:
+    """
+    Class which can produce two defects by flipping the simulation and concatenating
+    """
+    def __init__(self,p=0.5):
+        self.p=p
+    
+    def __call__(self,X,mask):
+        if random.random() < self.p:
+            H,W=X.size()
+            W_center=W//2
+            X_flip=torch.flip(X,dims=[-1])
+            mask_flip=torch.flip(mask,dims=[-1])
 
+            X_new=torch.cat((X[:,:W_center],X_flip[:,W_center:]),dim=1)
+            mask_new=torch.cat((mask[:W_center],mask_flip[W_center:]),dim=0)
+        return X_new, mask_new
+
+class HorizontalShift:
+    """
+    Class which shift sample horizontally
+    """
+    def __init__(self,p=0.5,min_shift=20,max_shift=100):
+        self.p=p
+        self.min_shift=min_shift
+        self.max_shift=max
     
 class DataNormalization:
     """
