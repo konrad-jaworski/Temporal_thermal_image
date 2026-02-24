@@ -164,6 +164,78 @@ class LocalDeltaTBiasColumns:
 
         return X_out, mask
 
+class DefectSlopeDropout:
+    """
+    Drops a horizontal band (partial height) over the defect columns span.
+    Biases dropout to early/mid/late parts of the slope.
+    """
+    def __init__(self, p=0.2, height_frac_range=(0.15, 0.4), width_pad_range=(0, 10), where_probs=(0.33, 0.34, 0.33)):
+        self.p = p
+        self.height_frac_range = height_frac_range
+        self.width_pad_range = width_pad_range
+        self.where_probs = where_probs  # (early, mid, late)
+
+    def __call__(self, X, mask):
+        if random.random() >= self.p:
+            return X, mask
+
+        H, W = X.shape
+        idx = torch.where(mask > 0)[0]
+        if idx.numel() == 0:
+            return X, mask
+
+        left = int(idx[0].item())
+        right = int(idx[-1].item())
+        pad = random.randint(*self.width_pad_range)
+        x0 = max(0, left - pad)
+        x1 = min(W, right + pad + 1)
+
+        frac = random.uniform(*self.height_frac_range)
+        h = max(1, int(frac * H))
+
+        region_choice = random.choices(["early", "mid", "late"], weights=self.where_probs, k=1)[0]
+
+        if region_choice == "early":
+            y0 = random.randint(0, max(0, (H // 3) - h))
+        elif region_choice == "late":
+            y0 = random.randint(max(0, (2 * H // 3)), H - h)
+        else:  # mid
+            mid_start = max(0, (H // 3))
+            mid_end = min(H - h, (2 * H // 3))
+            if mid_end < mid_start:
+                y0 = random.randint(0, H - h)
+            else:
+                y0 = random.randint(mid_start, mid_end)
+
+        y1 = y0 + h
+
+        X_out = X.clone()
+        X_out[y0:y1, x0:x1] = 0.0
+        return X_out, mask
+
+
+def d1_dy(X: torch.Tensor) -> torch.Tensor:
+    """
+    First derivative along height (H axis / rows).
+    X: (H, W) -> (H, W)
+    """
+    d = torch.zeros_like(X)
+    d[1:-1, :] = 0.5 * (X[2:, :] - X[:-2, :])  # central difference
+    d[0, :]    = X[1, :] - X[0, :]             # forward difference
+    d[-1, :]   = X[-1, :] - X[-2, :]           # backward difference
+    return d
+
+def d2_dy2(X: torch.Tensor) -> torch.Tensor:
+    """
+    Second derivative along height (H axis / rows).
+    X: (H, W) -> (H, W)
+    """
+    d2 = torch.zeros_like(X)
+    d2[1:-1, :] = X[2:, :] - 2 * X[1:-1, :] + X[:-2, :]
+    d2[0, :]    = d2[1, :]
+    d2[-1, :]   = d2[-2, :]
+    return d2
+
 class DataNormalization:
     """
     Normalize and denormalize data based on provided min and max values.
