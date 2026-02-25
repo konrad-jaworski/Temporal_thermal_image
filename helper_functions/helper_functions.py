@@ -8,7 +8,7 @@ class NoiseAddition:
     """
     Add Gaussian noise to B-scan only, keep depth unchanged.
     """
-    def __init__(self, sigma_min=0.15, sigma_max=1.5):
+    def __init__(self, sigma_min=0.1, sigma_max=0.3):
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
 
@@ -128,48 +128,12 @@ class RandomGaussianBlur:
 
         return X.squeeze(0), mask
     
-
-class LocalDeltaTBiasColumns:
-    def __init__(self, p=0.5, width_range=(50, 500), bias_range=(0.1, 1.0),
-                 smooth_edges=50):
-        self.p = p
-        self.width_range = width_range
-        self.bias_range = bias_range
-        self.smooth_edges = smooth_edges
-        
-
-    def __call__(self, X, mask):
-        if random.random() >= self.p:
-            return X, mask
-
-        H, W = X.shape
-        band_w = random.randint(max(1, self.width_range[0]), min(W, self.width_range[1]))
-        
-        x0 = random.randint(0, W - band_w)
-
-        x1 = x0 + band_w
-        delta = random.uniform(*self.bias_range)
-
-        X_out = X.clone()
-
-        k = min(self.smooth_edges, band_w // 2)
-        if k > 0:
-            weights = torch.ones(band_w, device=X.device, dtype=X.dtype)
-            ramp = torch.linspace(0, 1, steps=k, device=X.device, dtype=X.dtype)
-            weights[:k] = ramp
-            weights[-k:] = torch.flip(ramp, dims=[0])
-            X_out[:, x0:x1] += delta * weights.view(1, -1)
-        else:
-            X_out[:, x0:x1] += delta
-
-        return X_out, mask
-
 class DefectSlopeDropout:
     """
     Drops a horizontal band (partial height) over the defect columns span.
     Biases dropout to early/mid/late parts of the slope.
     """
-    def __init__(self, p=0.2, height_frac_range=(0.15, 0.4), width_pad_range=(0, 10), where_probs=(0.33, 0.34, 0.33)):
+    def __init__(self, p=0.2, height_frac_range=(0.15, 0.3), width_pad_range=(0, 10), where_probs=(0.33, 0.34, 0.33)):
         self.p = p
         self.height_frac_range = height_frac_range
         self.width_pad_range = width_pad_range
@@ -195,18 +159,24 @@ class DefectSlopeDropout:
 
         region_choice = random.choices(["early", "mid", "late"], weights=self.where_probs, k=1)[0]
 
-        if region_choice == "early":
-            y0 = random.randint(0, max(0, (H // 3) - h))
-        elif region_choice == "late":
-            y0 = random.randint(max(0, (2 * H // 3)), H - h)
-        else:  # mid
-            mid_start = max(0, (H // 3))
-            mid_end = min(H - h, (2 * H // 3))
-            if mid_end < mid_start:
-                y0 = random.randint(0, H - h)
-            else:
-                y0 = random.randint(mid_start, mid_end)
+        def randint_safe(a, b):
+            a = int(a); b = int(b)
+            if b < a:
+                return a
+            return random.randint(a, b)
 
+        if region_choice == "early":
+            y0 = randint_safe(0, (H // 3) - h)
+
+        elif region_choice == "late":
+            y0 = randint_safe(2 * H // 3, H - h)
+
+        else:  # mid
+            mid_start = H // 3
+            mid_end = (2 * H // 3) - h
+            y0 = randint_safe(mid_start, mid_end)
+
+        y0 = max(0, min(y0, H - h))
         y1 = y0 + h
 
         X_out = X.clone()
@@ -279,7 +249,7 @@ class TSR_extrapolation:
             y=np.array(value,dtype=np.float32)
         return y
 
-    def __call__(self, data,ord=2,extrapolate=True):
+    def __call__(self, data,ord=3,extrapolate=True):
         """
         Parameters:
         -----------
@@ -308,9 +278,11 @@ class TSR_extrapolation:
         L,H,W=Y[idx:,:,:].shape
 
         # Removal of the baseline (assuming that the data has 5 frames corresponding to room temperature)
-        mean_to_sub=Y[:5].mean()
-        Y=Y-mean_to_sub
-        Y_centered=Y
+        if Y[:5].mean()<Y[:-5].mean():
+            mean_to_sub=Y[:5].mean()
+            Y=Y-mean_to_sub
+        else:
+            print("Baseline is higher than the rest of the data, check the data and remove baseline manually if needed")
         
         # Moving to log scale
         Y=torch.from_numpy(Y).to(torch.double)
@@ -319,9 +291,6 @@ class TSR_extrapolation:
 
         # Shortening and movig it to the device
         Y2=torch.reshape(Y_log[idx:,:,:],(L,H*W)) # L x ( H x W )
-        
-        # range of polynomials investigated (We only investigate up to 8 order of the polynomial)
-        p=torch.arange(3,9)
         
         # Create log time characteristic
 
@@ -347,7 +316,7 @@ class TSR_extrapolation:
 
         # Formulate new time vector 
         t_c2=2*(thickness**2/(k/(density*sheat)))
-        ft_c2=np.floor(fps*t_c2)
+        ft_c2=np.round(fps*t_c2)
         x_p=torch.arange(1,ft_c2+1,device=device,dtype=torch.double) # 1..L_prime
         x_log_p=torch.log(x_p)
 
@@ -359,5 +328,10 @@ class TSR_extrapolation:
 
         Y_extra=torch.exp(Y_extra)
         Y_extra=torch.reshape(Y_extra,(-1,H,W))
+
+        # Correction of the first frame of the extrapolated data to match the first frame of the original data
+        if Y_extra[0,:,:].mean()>Y[idx,:,:].mean():
+            Y_extra[0,:,:]=Y[idx,:,:]
+        
 
         return Y_hat,a,Y_extra
