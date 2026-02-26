@@ -83,7 +83,6 @@ class HorizontalShift:
         self.max_shift = max_shift
 
     def __call__(self, X, mask):
-        # Always return 3 things
         idx = 0
 
         if random.random() < self.p:
@@ -206,19 +205,19 @@ def d2_dy2(X: torch.Tensor) -> torch.Tensor:
     d2[-1, :]   = d2[-2, :]
     return d2
 
-class DataNormalization:
-    """
-    Normalize and denormalize data based on provided min and max values.
-    """
-    def __init__(self,deltaT_min,deltaT_max):
-        self.deltaT_min=deltaT_min
-        self.deltaT_max=deltaT_max
+# class DataNormalization:
+#     """
+#     Normalize and denormalize data based on provided min and max values.
+#     """
+#     def __init__(self,deltaT_min,deltaT_max):
+#         self.deltaT_min=deltaT_min
+#         self.deltaT_max=deltaT_max
 
-    def normalize(self, data):
-        return (data - self.deltaT_min) / (self.deltaT_max - self.deltaT_min)
+#     def normalize(self, data):
+#         return (data - self.deltaT_min) / (self.deltaT_max - self.deltaT_min)
     
-    def denormalize(self, data_normalized):
-        return data_normalized * (self.deltaT_max - self.deltaT_min) + self.deltaT_min
+#     def denormalize(self, data_normalized):
+#         return data_normalized * (self.deltaT_max - self.deltaT_min) + self.deltaT_min
     
 class Interpolate:
     """

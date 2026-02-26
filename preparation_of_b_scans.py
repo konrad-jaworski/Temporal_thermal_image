@@ -19,10 +19,12 @@ def extract_rowwise_bscan_and_targets(
       - Save mask[i] * depth_factor as regression target
     """
 
+    # Creation of the specific folders
     os.makedirs(output_X_folder, exist_ok=True)
     os.makedirs(output_Y_folder, exist_ok=True)
     os.makedirs(output_depth_folder, exist_ok=True)
 
+    # Checking if folder contain npz file
     files = glob.glob(os.path.join(input_folder, "*.npz"))
     if not files:
         print("No .npz files found!")
@@ -44,6 +46,7 @@ def extract_rowwise_bscan_and_targets(
         mask = npz['mask']      # [H]
         meta = npz['meta']
 
+        # Creating depth factor which is inverted due to the naming convection describing amount of material removed.
         depth_factor = (100.0 - float(meta[40][1])) / 100.0
 
         for i in range(lower_bound, upper_bound):
@@ -72,12 +75,12 @@ def extract_rowwise_bscan_and_targets(
     print(f"Done. Saved {sample_counter} row-wise samples.")
 
 
-input_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\all_data_same_length_no_base_add_noise_val"
-output_X_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\B-scans_val\data"
-output_Y_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\B-scans_val\detection"
-output_depth_folder = r"E:\Simulated_and_experimental_data\Synthetic_data\B-scans_val\depth"
+input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/test_shallow_2_deep"
+output_X_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/test_shallow_2_deep/data"
+output_Y_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/test_shallow_2_deep/detection"
+output_depth_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/test_shallow_2_deep/depth"
 
-lower_bound = 400
+lower_bound = 450
 upper_bound = 500
 
 extract_rowwise_bscan_and_targets(

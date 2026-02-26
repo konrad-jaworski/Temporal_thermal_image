@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from helper_functions.helper_functions import RandomHorizontalFlipBscan, NoiseAddition
+from helper_functions.helper_functions import NoiseAddition,RandomHorizontalFlipBscan,HorizontalShift,RandomGaussianBlur,TwoDefect,DefectSlopeDropout
 from data.data_operators import BScanDepthDataset, ComposeBScanTransforms
 from networks.Unets import BnetSmallKernel, BnetMean,CompactBnet,BnetSmallKernelSmarter,BnetTiny
 from tqdm import tqdm
@@ -12,7 +12,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def main():
     train_transforms = ComposeBScanTransforms([
         RandomHorizontalFlipBscan(p=0.5),
-        NoiseAddition(noise_level=0.05),
+        HorizontalShift(),
+        NoiseAddition(),
     ])
 
     val_transforms = ComposeBScanTransforms([
