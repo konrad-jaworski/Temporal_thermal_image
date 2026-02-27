@@ -20,7 +20,7 @@
 import numpy as np
 import glob
 
-train_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/training_shallow_2_deep/*.npz"
+train_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/training/*.npz"
 
 all_values = []
 

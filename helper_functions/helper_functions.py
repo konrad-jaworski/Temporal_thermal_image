@@ -7,8 +7,10 @@ import torchvision.transforms.functional as TF
 class NoiseAddition:
     """
     Add Gaussian noise to B-scan only, keep depth unchanged.
+    With modification over the camera response.
     """
-    def __init__(self, sigma_min=0.1, sigma_max=0.3):
+
+    def __init__(self,sigma_min=0.065, sigma_max=0.2):
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
 

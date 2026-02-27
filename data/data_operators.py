@@ -80,19 +80,20 @@ class BScanDepthDataset(Dataset):
 
         bscan = bscan/self.scale  # We normalize the data by firstly mapping it to log1p scale and then divide it by 99.5 % percentail of trainnig data
 
-        bscan = bscan.unsqueeze(0)  # [ 1, H, W]
-        bscan = self.resize(bscan)               # [ 1, 512, W] 
-        
-        # Space for the augmentation in the future research, we need to do this in order to cooperate with pre_trained network.
-        bscan=bscan.repeat(3,1,1)             # [ 3, 512, W]
-        bscan = bscan.float()
-
         # --------------------------------------------------
         # AUGMENTATION HOOK (data + depth together)
         # --------------------------------------------------
         if self.transform is not None:
             bscan, depth = self.transform(bscan, depth)
 
+
+        # Preparing it to work with unet
+        bscan = bscan.unsqueeze(0)  # [ 1, H, W]
+        bscan = self.resize(bscan)               # [ 1, 512, W] 
+        
+        # Space for the augmentation in the future research, we need to do this in order to cooperate with pre_trained network.
+        bscan=bscan.repeat(3,1,1)             # [ 3, 512, W]
+        bscan = bscan.float()
         depth=depth.float()
         
         return bscan, depth

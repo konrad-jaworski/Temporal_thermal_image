@@ -12,71 +12,70 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def main():
     train_transforms = ComposeBScanTransforms([
         RandomHorizontalFlipBscan(p=0.5),
-        HorizontalShift(),
+        HorizontalShift(p=0.5),
+        TwoDefect(p=0.5),
         NoiseAddition(),
+        RandomGaussianBlur(p=0.5),
+        DefectSlopeDropout(p=0.2)
     ])
 
     val_transforms = ComposeBScanTransforms([
-        # NoiseAddition(noise_level=0.05)
+        NoiseAddition(sigma_min=0.065,sigma_max=0.07)
     ])
 
     train_dataset = BScanDepthDataset(
-        bscan_dir=r"E:\Simulated_and_experimental_data\Synthetic_data\B-scans_train\data",
-        depth_dir=r"E:\Simulated_and_experimental_data\Synthetic_data\B-scans_train\depth",
+        bscan_dir=r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/training/data",
+        depth_dir=r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/training/depth",
         transform=train_transforms,
-        normalization_path=r"C:\Users\stone\Temporal_thermal_image\normalization_params.npz"
+        normalization_path=r"/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/normalization_params.npz"
     )
 
     val_dataset = BScanDepthDataset(
-        bscan_dir=r"E:\Simulated_and_experimental_data\Synthetic_data\B-scans_val\data",
-        depth_dir=r"E:\Simulated_and_experimental_data\Synthetic_data\B-scans_val\depth",
+        bscan_dir=r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/validation/data",
+        depth_dir=r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/validation/depth",
         transform=val_transforms,
-        normalization_path=r"C:\Users\stone\Temporal_thermal_image\normalization_params.npz"
+        normalization_path=r"/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/normalization_params.npz"
     )
 
     train_loader = DataLoader(
         train_dataset,
-        batch_size=8,
+        batch_size=16,
         shuffle=True,
-        num_workers=8,
+        num_workers=24,
         pin_memory=True
     )
 
     val_loader = DataLoader(
         val_dataset,
-        batch_size=8,
+        batch_size=16,
         shuffle=True,
-        num_workers=8,
+        num_workers=24,
         pin_memory=True
     )
 
     # Your UNet-based regressor
     # model = BnetSmallKernel()
-    # model=BnetSmallKernelSmarter()
+    model=BnetSmallKernelSmarter()
     # model = BnetMean()
-    # model=CompactBnet()
-    model=BnetTiny()
+    # model=BnetTiny()
     model.to(device)
 
     # Loss function (per-column regression)
-    criterion = nn.MSELoss()  # Could use L1Loss or HuberLoss if preferred
-    # criterion = nn.L1Loss()
-
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    criterion = nn.MSELoss()  # Could use L1Loss or HuberLoss if preferred so for future development
+    
+    optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
     num_epochs = 500
     best_loss = float('inf')
-    save_path = r"C:\Users\stone\Temporal_thermal_image\Unet_bnettiny_l2_both_classes.pth"
+    save_path = r"/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs/smart_net/smart_net.pth"
 
     # Early stopping parameters
-    patience = 100        # epochs to wait
+    patience = 50        # epochs to wait
     min_delta = 1e-4      # minimum improvement
     counter = 0
 
     train_log=[]
     val_log=[]
-
-
 
     for epoch in tqdm(range(num_epochs), desc=f"Epochs", leave=False):
         model.train()
@@ -128,8 +127,8 @@ def main():
             print("Early stopping triggered.")
             break    
         
-    torch.save(train_log,'train_log_unet_bnettiny_big_dataset.pt')
-    torch.save(val_log, 'val_log_unet_bnettiny_big_dataset.pt')
+    torch.save(train_log,'/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs/smart_net/train_log_smartnet.pt')
+    torch.save(val_log, '/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs/smart_net/val_log_smartnet.pt')
 
 if __name__ == "__main__":
     import multiprocessing

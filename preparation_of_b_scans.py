@@ -5,7 +5,6 @@ import glob
 def extract_rowwise_bscan_and_targets(
     input_folder,
     output_X_folder,
-    output_Y_folder,
     output_depth_folder,
     lower_bound,
     upper_bound
@@ -21,7 +20,6 @@ def extract_rowwise_bscan_and_targets(
 
     # Creation of the specific folders
     os.makedirs(output_X_folder, exist_ok=True)
-    os.makedirs(output_Y_folder, exist_ok=True)
     os.makedirs(output_depth_folder, exist_ok=True)
 
     # Checking if folder contain npz file
@@ -67,7 +65,6 @@ def extract_rowwise_bscan_and_targets(
             fname = f"{base_name}_row_{i:04d}"
 
             np.save(os.path.join(output_X_folder, fname + ".npy"), X)
-            np.save(os.path.join(output_Y_folder, fname + ".npy"), Y)
             np.save(os.path.join(output_depth_folder, fname + ".npy"), depth_target)
 
             sample_counter += 1
@@ -75,18 +72,16 @@ def extract_rowwise_bscan_and_targets(
     print(f"Done. Saved {sample_counter} row-wise samples.")
 
 
-input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/test_shallow_2_deep"
-output_X_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/test_shallow_2_deep/data"
-output_Y_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/test_shallow_2_deep/detection"
-output_depth_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/test_shallow_2_deep/depth"
+input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/validation"
+output_X_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/validation/data"
+output_depth_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/validation/depth"
 
-lower_bound = 450
+lower_bound = 400
 upper_bound = 500
 
 extract_rowwise_bscan_and_targets(
     input_folder,
     output_X_folder,
-    output_Y_folder,
     output_depth_folder,
     lower_bound,
     upper_bound

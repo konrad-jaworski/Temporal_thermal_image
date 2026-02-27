@@ -8,9 +8,9 @@ source_dir = Path("/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extr
 required_phrase = "thickness4mm"   # only consider files containing this
 
 rules = {
-    "training_deep_2_shallow":    ["depth20pct", "depth30pct","depth40pct","depth50pct"],
-    "validation_deep_2_shallow":  ["depth60pct"],
-    "test_deep_2_shallow":        ["depth70pct","depth80pct","depth90pct"],
+    "training":    ["depth20pct", "depth40pct","depth60pct","depth80pct"],
+    "validation":  ["depth30pct","depth70pct"],
+    "test":        ["depth10pct","depth50pct","depth90pct"],
 }
 
 dry_run = False   # set to False to actually copy
