@@ -1,136 +1,191 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import os
 from torch.utils.data import DataLoader
-from helper_functions.helper_functions import NoiseAddition,RandomHorizontalFlipBscan,HorizontalShift,RandomGaussianBlur,TwoDefect,DefectSlopeDropout
-from data.data_operators import BScanDepthDataset, ComposeBScanTransforms
-from networks.Unets import BnetSmallKernel, BnetMean,CompactBnet,BnetSmallKernelSmarter,BnetTiny
 from tqdm import tqdm
 
+from helper_functions.helper_functions import NoiseAddition, HorizontalShift, DefectSlopeDropout
+from data.data_operators import BScanDepthDataset, ComposeBScanTransforms
+from networks.Unets import BnetTiny
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+pin_memory = (device.type == "cuda")
 
-def main():
-    train_transforms = ComposeBScanTransforms([
-        RandomHorizontalFlipBscan(p=0.5),
-        HorizontalShift(p=0.5),
-        TwoDefect(p=0.5),
-        NoiseAddition(),
-        RandomGaussianBlur(p=0.5),
-        DefectSlopeDropout(p=0.2)
-    ])
+# -------------------------
+# Transforms
+# -------------------------
+train_transforms = ComposeBScanTransforms([
+    HorizontalShift(p=0.3),
+    NoiseAddition(),                 
+    DefectSlopeDropout(p=0.1)
+])
 
-    val_transforms = ComposeBScanTransforms([
-        NoiseAddition(sigma_min=0.065,sigma_max=0.07)
-    ])
+val_noisy_transforms = ComposeBScanTransforms([
+    NoiseAddition(sigma_min=0.02, sigma_max=0.06)
+])
 
-    train_dataset = BScanDepthDataset(
-        bscan_dir=r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/training/data",
-        depth_dir=r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/training/depth",
-        transform=train_transforms,
-        normalization_path=r"/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/normalization_params.npz"
-    )
+# -------------------------
+# Datasets
+# -------------------------
+train_dataset = BScanDepthDataset(
+    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/training/data",
+    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/training/depth",
+    transform=train_transforms,
+    normalization_path="/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/normalization_params.npz"
+)
 
-    val_dataset = BScanDepthDataset(
-        bscan_dir=r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/validation/data",
-        depth_dir=r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/validation/depth",
-        transform=val_transforms,
-        normalization_path=r"/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/normalization_params.npz"
-    )
+# CLEAN validation (controls early stopping + best model)
+val_dataset_clean = BScanDepthDataset(
+    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/validation/data",
+    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/validation/depth",
+    transform=None,  # <-- important: no augmentation
+    normalization_path="/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/normalization_params.npz"
+)
 
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=16,
-        shuffle=True,
-        num_workers=24,
-        pin_memory=True
-    )
+# NOISY validation (robustness metric only)
+val_dataset_noisy = BScanDepthDataset(
+    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/validation/data",
+    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/validation/depth",
+    transform=val_noisy_transforms,
+    normalization_path="/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/normalization_params.npz"
+)
 
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=16,
-        shuffle=True,
-        num_workers=24,
-        pin_memory=True
-    )
+# -------------------------
+# Loaders
+# -------------------------
+train_loader = DataLoader(
+    train_dataset,
+    batch_size=16,
+    shuffle=True,
+    num_workers=24,
+    pin_memory=pin_memory
+)
 
-    # Your UNet-based regressor
-    # model = BnetSmallKernel()
-    model=BnetSmallKernelSmarter()
-    # model = BnetMean()
-    # model=BnetTiny()
-    model.to(device)
+val_loader_clean = DataLoader(
+    val_dataset_clean,
+    batch_size=16,
+    shuffle=False,
+    num_workers=24,
+    pin_memory=pin_memory
+)
 
-    # Loss function (per-column regression)
-    criterion = nn.MSELoss()  # Could use L1Loss or HuberLoss if preferred so for future development
-    
-    optimizer = optim.Adam(model.parameters(), lr=1e-4)
+val_loader_noisy = DataLoader(
+    val_dataset_noisy,
+    batch_size=16,
+    shuffle=False,
+    num_workers=24,
+    pin_memory=pin_memory
+)
 
-    num_epochs = 500
-    best_loss = float('inf')
-    save_path = r"/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs/smart_net/smart_net.pth"
+# -------------------------
+# Model / loss / optimizer
+# -------------------------
+model = BnetTiny().to(device)
+criterion = nn.MSELoss()
+optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
-    # Early stopping parameters
-    patience = 50        # epochs to wait
-    min_delta = 1e-4      # minimum improvement
-    counter = 0
+# -------------------------
+# Save paths
+# -------------------------
+main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs"
+model_name = "tinynet"
+model_dir = os.path.join(main_path, model_name)
+os.makedirs(model_dir, exist_ok=True)
 
-    train_log=[]
-    val_log=[]
+best_path = os.path.join(model_dir, "best_model_clean.pth")
+last_path = os.path.join(model_dir, "last_model.pth")
 
-    for epoch in tqdm(range(num_epochs), desc=f"Epochs", leave=False):
-        model.train()
-       
-        running_loss = 0.0
+# -------------------------
+# Training config
+# -------------------------
+num_epochs = 500
+best_clean_loss = float("inf")
 
-        for bscan, depth in tqdm(train_loader, desc=f"Epoch {epoch+1} Batches", leave=False):
-            bscan = bscan.to(device)   # [B,3,H,W]
-            depth = depth.to(device)   # [B,W]
+patience = 50
+min_delta = 1e-3 
+counter = 0
 
-            optimizer.zero_grad()
-            output = model(bscan)      # [B,W]
+train_log = []
+val_clean_log = []
+val_noisy_log = []
+
+# -------------------------
+# Eval helper
+# -------------------------
+def evaluate(loader):
+    model.eval()
+    total = 0.0
+    n = 0
+    with torch.no_grad():
+        for bscan, depth in loader:
+            bscan = bscan.to(device, non_blocking=True)
+            depth = depth.to(device, non_blocking=True)
+
+            output = model(bscan)
             loss = criterion(output, depth)
-            loss.backward()
-            optimizer.step()
 
-            running_loss += loss.item() * bscan.size(0)
+            bs = bscan.size(0)
+            total += loss.item() * bs
+            n += bs
+    return total / max(1, n)
 
-        epoch_loss = running_loss / len(train_loader.dataset)
-        train_log.append(epoch_loss)
-        
+# -------------------------
+# Training loop
+# -------------------------
+for epoch in tqdm(range(num_epochs), desc="Epochs", leave=False):
+    model.train()
+    running_loss = 0.0
 
-        # Validation
-        model.eval()
-        val_loss = 0.0
-        with torch.no_grad():
-            for bscan, depth in tqdm(val_loader, desc=f"Epoch {epoch+1} Val Batches", leave=False):
-                bscan = bscan.to(device)
-                depth = depth.to(device)
+    for bscan, depth in tqdm(train_loader, desc=f"Epoch {epoch+1} Train", leave=False):
+        bscan = bscan.to(device, non_blocking=True)
+        depth = depth.to(device, non_blocking=True)
 
-                output = model(bscan)
-                loss = criterion(output, depth)
-                val_loss += loss.item() * bscan.size(0)
-        
-        val_epoch_loss = val_loss / len(val_loader.dataset)
-        val_log.append(val_epoch_loss)
+        optimizer.zero_grad(set_to_none=True)
+        output = model(bscan)
+        loss = criterion(output, depth)
+        loss.backward()
+        optimizer.step()
 
-        print(f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {epoch_loss:.6f}, Val Loss: {val_epoch_loss:.6f}")
+        running_loss += loss.item() * bscan.size(0)
 
-        if val_epoch_loss < best_loss - min_delta:
-            best_loss = val_epoch_loss
-            counter = 0
-            torch.save(model.state_dict(), save_path)
-            print(f"Saved new best model with loss {best_loss:.6f} at {save_path}")
-        else:
-            counter+=1
+    train_epoch_loss = running_loss / len(train_loader.dataset)
+    train_log.append(train_epoch_loss)
 
-        if counter >= patience:
-            print("Early stopping triggered.")
-            break    
-        
-    torch.save(train_log,'/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs/smart_net/train_log_smartnet.pt')
-    torch.save(val_log, '/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs/smart_net/val_log_smartnet.pt')
+    # ---- Two validation passes ----
+    clean_loss = evaluate(val_loader_clean)      # controls early stopping
+    noisy_loss = evaluate(val_loader_noisy)      # robustness metric
 
-if __name__ == "__main__":
-    import multiprocessing
-    multiprocessing.freeze_support()
-    main()
+    val_clean_log.append(clean_loss)
+    val_noisy_log.append(noisy_loss)
+
+    print(
+        f"Epoch [{epoch+1}/{num_epochs}] "
+        f"Train: {train_epoch_loss:.6f} | "
+        f"Val(clean): {clean_loss:.6f} | "
+        f"Val(noisy): {noisy_loss:.6f}"
+    )
+
+    # always save last
+    torch.save(model.state_dict(), last_path)
+
+    # early stopping + best checkpoint ONLY on clean val
+    if clean_loss < best_clean_loss - min_delta:
+        best_clean_loss = clean_loss
+        counter = 0
+        torch.save(model.state_dict(), best_path)
+        print(f"Saved BEST (clean) model: {best_clean_loss:.6f} -> {best_path}")
+    else:
+        counter += 1
+
+    if counter >= patience:
+        print("Early stopping triggered (based on clean validation).")
+        break
+
+# -------------------------
+# Save logs
+# -------------------------
+torch.save(train_log, os.path.join(model_dir, "train_log.pt"))
+torch.save(val_clean_log, os.path.join(model_dir, "val_clean_log.pt"))
+torch.save(val_noisy_log, os.path.join(model_dir, "val_noisy_log.pt"))
+print("Saved logs + checkpoints in:", model_dir)

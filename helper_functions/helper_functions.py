@@ -2,6 +2,7 @@ import numpy as np
 import random
 import torch
 import torchvision.transforms.functional as TF
+import torch.nn.functional as F
 
 
 class NoiseAddition:
@@ -10,7 +11,7 @@ class NoiseAddition:
     With modification over the camera response.
     """
 
-    def __init__(self,sigma_min=0.065, sigma_max=0.2):
+    def __init__(self,sigma_min=0.02, sigma_max=0.1):
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
 
@@ -75,59 +76,60 @@ class TwoDefect:
 
 class HorizontalShift:
     """
-    Shift sample horizontally (zero-padded).
+    Shift sample horizontally using reflect padding.
     X: (H, W)
-    mask: (W,)   (as in your code)
+    mask: (W,)
     """
-    def __init__(self, p=0.5, min_shift=50, max_shift=256):
+
+    def __init__(self, p=0.5, min_shift=1, max_shift=64):
         self.p = p
         self.min_shift = min_shift
         self.max_shift = max_shift
 
     def __call__(self, X, mask):
-        idx = 0
+        if random.random() >= self.p:
+            return X, mask
 
-        if random.random() < self.p:
-            H, W = X.size()
+        H, W = X.size()
+        idx = int(torch.randint(self.min_shift, self.max_shift, (1,)).item())
+        direction = random.choice(["left", "right"])
 
-            back_ground = torch.zeros_like(X)
-            mask_ground = torch.zeros_like(mask)
+        if direction == "left":
+            # pad right, crop left
+            X_pad = F.pad(X.unsqueeze(0), (0, idx), mode="reflect").squeeze(0)
+            X_shifted = X_pad[:, idx:idx+W]
 
-            # make idx a Python int
-            idx = int(torch.randint(self.min_shift, self.max_shift, (1,), device=X.device).item())
+            mask_pad = F.pad(mask.unsqueeze(0), (0, idx), mode="reflect").squeeze(0)
+            mask_shifted = mask_pad[idx:idx+W]
 
-            if random.random() < 0.5:
-                # shift LEFT: content moves left, zeros on right
-                X_shifted = torch.cat((X[:, idx:], back_ground[:, :idx]), dim=1)
-                mask_shifted = torch.cat((mask[idx:], mask_ground[:idx]), dim=0)
-            else:
-                # shift RIGHT: content moves right, zeros on left
-                X_shifted = torch.cat((back_ground[:, :idx], X[:, :-idx]), dim=1)
-                mask_shifted = torch.cat((mask_ground[:idx], mask[:-idx]), dim=0)
+        else:  # right
+            # pad left, crop right
+            X_pad = F.pad(X.unsqueeze(0), (idx, 0), mode="reflect").squeeze(0)
+            X_shifted = X_pad[:, :W]
 
-            return X_shifted, mask_shifted
+            mask_pad = F.pad(mask.unsqueeze(0), (idx, 0), mode="reflect").squeeze(0)
+            mask_shifted = mask_pad[:W]
 
-        # no augmentation
-        return X, mask
+        return X_shifted, mask_shifted
 
-class RandomGaussianBlur:
-    def __init__(self, p=0.5, kernel_sizes=(3,5,7,9), sigma_range=(0.5, 3.0)):
-        self.p = p
-        self.kernel_sizes = kernel_sizes
-        self.sigma_range = sigma_range
+# class RandomGaussianBlur:
+#     def __init__(self, p=0.5, kernel_sizes=(3,5,7,9), sigma_range=(0.5, 3.0)):
+#         self.p = p
+#         self.kernel_sizes = kernel_sizes
+#         self.sigma_range = sigma_range
 
-    def __call__(self, X, mask):
-        if random.random() < self.p:
-            # X must be (C,H,W)
-            if X.dim() == 2:
-                X = X.unsqueeze(0)
+#     def __call__(self, X, mask):
+#         if random.random() < self.p:
+#             # X must be (C,H,W)
+#             if X.dim() == 2:
+#                 X = X.unsqueeze(0)
 
-            k = random.choice(self.kernel_sizes)
-            sigma = random.uniform(*self.sigma_range)
+#             k = random.choice(self.kernel_sizes)
+#             sigma = random.uniform(*self.sigma_range)
 
-            X = TF.gaussian_blur(X, kernel_size=k, sigma=sigma)
+#             X = TF.gaussian_blur(X, kernel_size=k, sigma=sigma)
 
-        return X.squeeze(0), mask
+#         return X.squeeze(0), mask
     
 class DefectSlopeDropout:
     """
