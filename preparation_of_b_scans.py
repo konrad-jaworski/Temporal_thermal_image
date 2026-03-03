@@ -72,12 +72,12 @@ def extract_rowwise_bscan_and_targets(
     print(f"Done. Saved {sample_counter} row-wise samples.")
 
 
-input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/validation"
-output_X_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/validation/data"
-output_depth_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/validation/depth"
+input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/test"
+output_X_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/test/data"
+output_depth_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/test/depth"
 
-lower_bound = 400
-upper_bound = 500
+lower_bound = 0
+upper_bound = 512
 
 extract_rowwise_bscan_and_targets(
     input_folder,

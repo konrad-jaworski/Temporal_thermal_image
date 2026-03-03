@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from helper_functions.helper_functions import NoiseAddition, HorizontalShift, DefectSlopeDropout
 from data.data_operators import BScanDepthDataset, ComposeBScanTransforms
-from networks.Unets import BnetTiny
+from networks.Unets import BnetTiny,BnetMean,BnetSmallKernel,BnetSmallKernelSmarter
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 pin_memory = (device.type == "cuda")
@@ -16,9 +16,9 @@ pin_memory = (device.type == "cuda")
 # Transforms
 # -------------------------
 train_transforms = ComposeBScanTransforms([
-    HorizontalShift(p=0.3),
-    NoiseAddition(),                 
-    DefectSlopeDropout(p=0.1)
+    HorizontalShift(p=0.3)
+    # NoiseAddition(),                 
+    # DefectSlopeDropout(p=0.1)
 ])
 
 val_noisy_transforms = ComposeBScanTransforms([
@@ -81,15 +81,15 @@ val_loader_noisy = DataLoader(
 # -------------------------
 # Model / loss / optimizer
 # -------------------------
-model = BnetTiny().to(device)
+model = BnetSmallKernelSmarter().to(device)
 criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=1e-4)
+optimizer = optim.Adam(model.parameters(), lr=1e-4) # modify with respect to the model and dataset
 
 # -------------------------
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs"
-model_name = "tinynet"
+model_name = "tiny_net"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -103,7 +103,7 @@ num_epochs = 500
 best_clean_loss = float("inf")
 
 patience = 50
-min_delta = 1e-3 
+min_delta = 1e-4 
 counter = 0
 
 train_log = []
@@ -154,16 +154,16 @@ for epoch in tqdm(range(num_epochs), desc="Epochs", leave=False):
 
     # ---- Two validation passes ----
     clean_loss = evaluate(val_loader_clean)      # controls early stopping
-    noisy_loss = evaluate(val_loader_noisy)      # robustness metric
+    # noisy_loss = evaluate(val_loader_noisy)      # robustness metric
 
     val_clean_log.append(clean_loss)
-    val_noisy_log.append(noisy_loss)
+    # val_noisy_log.append(noisy_loss)
 
     print(
         f"Epoch [{epoch+1}/{num_epochs}] "
         f"Train: {train_epoch_loss:.6f} | "
         f"Val(clean): {clean_loss:.6f} | "
-        f"Val(noisy): {noisy_loss:.6f}"
+        # f"Val(noisy): {noisy_loss:.6f}"
     )
 
     # always save last
