@@ -112,24 +112,6 @@ class HorizontalShift:
 
         return X_shifted, mask_shifted
 
-# class RandomGaussianBlur:
-#     def __init__(self, p=0.5, kernel_sizes=(3,5,7,9), sigma_range=(0.5, 3.0)):
-#         self.p = p
-#         self.kernel_sizes = kernel_sizes
-#         self.sigma_range = sigma_range
-
-#     def __call__(self, X, mask):
-#         if random.random() < self.p:
-#             # X must be (C,H,W)
-#             if X.dim() == 2:
-#                 X = X.unsqueeze(0)
-
-#             k = random.choice(self.kernel_sizes)
-#             sigma = random.uniform(*self.sigma_range)
-
-#             X = TF.gaussian_blur(X, kernel_size=k, sigma=sigma)
-
-#         return X.squeeze(0), mask
     
 class DefectSlopeDropout:
     """
@@ -186,7 +168,7 @@ class DefectSlopeDropout:
         X_out[y0:y1, x0:x1] = 0.0
         return X_out, mask
 
-
+# Derivatives approximation --------------------------------------------------------------------------------------------------------
 def d1_dy(X: torch.Tensor) -> torch.Tensor:
     """
     First derivative along height (H axis / rows).
@@ -209,6 +191,25 @@ def d2_dy2(X: torch.Tensor) -> torch.Tensor:
     d2[-1, :]   = d2[-2, :]
     return d2
 
+
+def d1_dx(X: torch.Tensor) -> torch.Tensor:
+    """
+    First derivative along width (spatial axis).
+    X: (H_time, W_space)
+    """
+    d = torch.zeros_like(X)
+
+    # central difference
+    d[:, 1:-1] = (X[:, 2:] - X[:, :-2]) * 0.5
+
+    # boundaries
+    d[:, 0]  = X[:, 1] - X[:, 0]
+    d[:, -1] = X[:, -1] - X[:, -2]
+
+    return d
+
+
+
 def d2_dx2(X: torch.Tensor)->torch.Tensor:
     """
     Second derivative along width (W axis/ columns)
@@ -219,20 +220,6 @@ def d2_dx2(X: torch.Tensor)->torch.Tensor:
     d2[:, -1]= d2[:, -2]
 
     return d2
-
-# class DataNormalization:
-#     """
-#     Normalize and denormalize data based on provided min and max values.
-#     """
-#     def __init__(self,deltaT_min,deltaT_max):
-#         self.deltaT_min=deltaT_min
-#         self.deltaT_max=deltaT_max
-
-#     def normalize(self, data):
-#         return (data - self.deltaT_min) / (self.deltaT_max - self.deltaT_min)
-    
-#     def denormalize(self, data_normalized):
-#         return data_normalized * (self.deltaT_max - self.deltaT_min) + self.deltaT_min
     
 class Interpolate:
     """
