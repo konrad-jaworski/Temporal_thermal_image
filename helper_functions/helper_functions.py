@@ -209,6 +209,17 @@ def d2_dy2(X: torch.Tensor) -> torch.Tensor:
     d2[-1, :]   = d2[-2, :]
     return d2
 
+def d2_dx2(X: torch.Tensor)->torch.Tensor:
+    """
+    Second derivative along width (W axis/ columns)
+    """
+    d2 = torch.zeros_like(X)
+    d2[:, 1:-1] = X[:,2:] - 2 * X[ :,1:-1] + X[:, :-2]
+    d2[:, 0] = d2[:, 1] 
+    d2[:, -1]= d2[:, -2]
+
+    return d2
+
 # class DataNormalization:
 #     """
 #     Normalize and denormalize data based on provided min and max values.

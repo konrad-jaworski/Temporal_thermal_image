@@ -146,24 +146,39 @@ val_loader_clean = DataLoader(
 model = BnetSmallKernelSmarter().to(device)
 
 # NEW LOSS (Stage 1 ablation)
-criterion = WeightedSmoothL1Sparse(
-    w_roi=10.0,   # start here; try 5.0 if BG starts drifting
-    w_bg=1.0,
-    beta=0.05,    # Huber transition; ~0.02–0.1 reasonable on [0,1] targets
-    roi_threshold=0.0
-)
+# criterion = WeightedSmoothL1Sparse(
+#     w_roi=10.0,   # start here; try 5.0 if BG starts drifting
+#     w_bg=1.0,
+#     beta=0.05,    # Huber transition; ~0.02–0.1 reasonable on [0,1] targets
+#     roi_threshold=0.0
+# )
+
+# MSE loss (Stage 1 baseline)
+criterion = nn.MSELoss()
 
 optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
 # Optional: stable training if you see spikes
 GRAD_CLIP_NORM = 1.0  # set e.g. 1.0 if needed
 
+# Stage 2: non-linear prediction
+
+non_linear_pred=True
+EPS = 1e-6
+
+def depth_to_u(depth):
+    return torch.sqrt(depth.clamp_min(0.0) + EPS)
+
+def u_to_depth(u):
+    return (u.clamp(0.0, 1.0) ** 2)
+
+
 
 # -------------------------
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs"
-model_name = "smart_net_new_loss"
+model_name = "smart_net_non_linear_pred"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -188,7 +203,7 @@ val_clean_log = []
 # -------------------------
 # Eval helper
 # -------------------------
-def evaluate(loader):
+def evaluate(loader,non_linear_pred=non_linear_pred):
     model.eval()
     total = 0.0
     n = 0
@@ -197,8 +212,14 @@ def evaluate(loader):
             bscan = bscan.to(device, non_blocking=True)
             depth = depth.to(device, non_blocking=True)
 
-            output = model(bscan)
-            loss = criterion(output, depth)
+            
+            if non_linear_pred==False:
+                output = model(bscan)
+                loss = criterion(output, depth)
+            else:
+                output_u = model(bscan)                  # predicts u in [0,1]
+                target_u = depth_to_u(depth)             # sqrt(depth)
+                loss = criterion(output_u, target_u)
 
             bs = bscan.size(0)
             total += loss.item() * bs
@@ -218,8 +239,15 @@ for epoch in tqdm(range(num_epochs), desc="Epochs", leave=False):
         depth = depth.to(device, non_blocking=True)
 
         optimizer.zero_grad(set_to_none=True)
-        output = model(bscan)
-        loss = criterion(output, depth)
+        
+        if non_linear_pred==False:
+            output = model(bscan)
+            loss = criterion(output, depth)
+        else:
+            output_u = model(bscan)                  # predicts u in [0,1]
+            target_u = depth_to_u(depth)             # sqrt(depth)
+            loss = criterion(output_u, target_u)
+
         loss.backward()
 
         if GRAD_CLIP_NORM is not None:
@@ -232,7 +260,7 @@ for epoch in tqdm(range(num_epochs), desc="Epochs", leave=False):
     train_log.append(train_epoch_loss)
 
     # ---- Validation pass ----
-    clean_loss = evaluate(val_loader_clean)
+    clean_loss = evaluate(val_loader_clean,non_linear_pred)
     val_clean_log.append(clean_loss)
 
     print(
@@ -271,7 +299,7 @@ run_config = {
     "batch_size": 16,
     "num_workers": 24,
     "lr": 1e-4,
-    "loss": "WeightedSmoothL1Sparse",
+    "loss": "MSE",
     "w_roi": 10.0,
     "w_bg": 1.0,
     "beta": 0.05,
