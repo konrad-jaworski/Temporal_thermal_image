@@ -100,14 +100,16 @@ train_dataset = BScanDepthDataset(
     bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/training/data",
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/training/depth",
     transform=train_transforms,
-    normalization_path="/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/normalization_params.npz"
+    normalization_path="/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/normalization_params.npz",
+    derivative_mode='mixed'
 )
 
 val_dataset_clean = BScanDepthDataset(
     bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/validation/data",
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/validation/depth",
     transform=None,
-    normalization_path="/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/normalization_params.npz"
+    normalization_path="/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/normalization_params.npz",
+    derivative_mode='mixed'
 )
 
 
@@ -121,7 +123,7 @@ train_loader = DataLoader(
     train_dataset,
     batch_size=16,
     shuffle=True,
-    num_workers=24,
+    num_workers=12,
     pin_memory=pin_memory,
     worker_init_fn=seed_worker,
     generator=g,
@@ -132,7 +134,7 @@ val_loader_clean = DataLoader(
     val_dataset_clean,
     batch_size=16,
     shuffle=False,
-    num_workers=24,
+    num_workers=12,
     pin_memory=pin_memory,
     worker_init_fn=seed_worker,
     generator=g,
@@ -163,7 +165,7 @@ GRAD_CLIP_NORM = 1.0  # set e.g. 1.0 if needed
 
 # Stage 2: non-linear prediction
 
-non_linear_pred=True
+non_linear_pred=False
 EPS = 1e-6
 
 def depth_to_u(depth):
@@ -178,7 +180,7 @@ def u_to_depth(u):
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs"
-model_name = "smart_net_non_linear_pred"
+model_name = "smart_net_time_and_space_derivative"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -295,17 +297,14 @@ torch.save(val_clean_log, os.path.join(model_dir, "val_clean_log.pt"))
 # Save meta so you can reproduce the run exactly
 run_config = {
     "seed": SEED,
-    "deterministic": False,
     "batch_size": 16,
     "num_workers": 24,
     "lr": 1e-4,
     "loss": "MSE",
-    "w_roi": 10.0,
-    "w_bg": 1.0,
-    "beta": 0.05,
+    "channels": "X, dX/dt, d2X/dx2",
+    "derivative_mode": "mixed",
     "hshift_p": 0.3,
     "patience": patience,
-    "min_delta": min_delta,
 }
 torch.save(run_config, os.path.join(model_dir, "run_config.pt"))
 

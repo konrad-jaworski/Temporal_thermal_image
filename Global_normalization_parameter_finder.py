@@ -1,71 +1,133 @@
 import numpy as np
 import glob
 import torch
+from tqdm import tqdm
 from helper_functions.helper_functions import d1_dy, d2_dx2
 
 train_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/training/*.npz"
+files = sorted(glob.glob(train_folder))
 
-all_temp_values = []
-all_dt_values = []
-all_dxx_values = []
+print(f"Found {len(files)} training cubes")
 
-# --------------------------------------------------
-# First pass: compute temperature scale from log1p(T)
-# --------------------------------------------------
-for f in glob.glob(train_folder):
-    d = np.load(f)["data"]   # shape: [T, H, W]
+# =========================================================
+# Helper: percentile from histogram
+# =========================================================
+def percentile_from_hist(hist, bin_edges, q):
+    cdf = np.cumsum(hist)
+    target = q / 100.0 * cdf[-1]
+    idx = np.searchsorted(cdf, target)
+    idx = min(idx, len(bin_edges) - 2)
+    return bin_edges[idx]
 
-    # clamp negatives just in case
+
+# =========================================================
+# PASS 1: find temperature scale
+# =========================================================
+
+temp_max = 0.0
+
+for f in tqdm(files, desc="Pass 1a/3: estimate temp max"):
+    d = np.load(f)["data"]
+    d = np.maximum(d, 0.0)
+    log_d = np.log1p(d)
+    temp_max = max(temp_max, float(log_d.max()))
+
+n_bins_temp = 20000
+temp_edges = np.linspace(0.0, temp_max, n_bins_temp + 1)
+temp_hist = np.zeros(n_bins_temp, dtype=np.int64)
+
+for f in tqdm(files, desc="Pass 1b/3: histogram temperature"):
+    d = np.load(f)["data"]
     d = np.maximum(d, 0.0)
 
     log_d = np.log1p(d)
-    all_temp_values.append(log_d.ravel())
 
-all_temp_values = np.concatenate(all_temp_values)
-scale_temp = float(np.percentile(all_temp_values, 99.5))
+    h, _ = np.histogram(log_d, bins=temp_edges)
+    temp_hist += h
 
-print("Computed temperature scale:", scale_temp)
+scale_temp = float(percentile_from_hist(temp_hist, temp_edges, 99.5))
+print("\nComputed temperature scale:", scale_temp)
 
-# --------------------------------------------------
-# Second pass: compute derivative scales from
-# normalized B-scans: X = log1p(T) / scale_temp
-# --------------------------------------------------
-for f in glob.glob(train_folder):
-    d = np.load(f)["data"]   # shape: [T, H, W]
+
+# =========================================================
+# PASS 2: estimate derivative maxima
+# =========================================================
+
+dt_max = 0.0
+dxx_max = 0.0
+
+for f in tqdm(files, desc="Pass 2/3: estimate derivative maxima"):
+    d = np.load(f)["data"]
     d = np.maximum(d, 0.0)
 
-    # log + normalize
-    X = np.log1p(d) / scale_temp   # [T, H, W]
-
+    X = np.log1p(d) / scale_temp
     T, H, W = X.shape
 
-    # Each row in H gives one B-scan of shape [T, W]
-    for row in range(H):
-        bscan = X[:, row, :]   # [T, W]
+    for row in tqdm(range(H), leave=False):
+        bscan = torch.from_numpy(X[:, row, :]).float()
 
-        bscan_t = torch.from_numpy(bscan).float()
+        dt = d1_dy(bscan).abs()
+        dxx = d2_dx2(bscan).abs()
 
-        dt = d1_dy(bscan_t)     # first derivative over time axis
-        dxx = d2_dx2(bscan_t)   # second derivative over width axis
+        dt_max = max(dt_max, float(dt.max()))
+        dxx_max = max(dxx_max, float(dxx.max()))
 
-        all_dt_values.append(dt.abs().numpy().ravel())
-        all_dxx_values.append(dxx.abs().numpy().ravel())
+print("\nEstimated max |dT/dt|:", dt_max)
+print("Estimated max |d2T/dx2|:", dxx_max)
 
-all_dt_values = np.concatenate(all_dt_values)
-all_dxx_values = np.concatenate(all_dxx_values)
 
-scale_dt = float(np.percentile(all_dt_values, 99.5))
-scale_dxx = float(np.percentile(all_dxx_values, 99.5))
+# =========================================================
+# PASS 3: histogram accumulation
+# =========================================================
 
-print("Computed dT/dt scale:", scale_dt)
+n_bins_dt = 20000
+n_bins_dxx = 20000
+
+dt_max = max(dt_max, 1e-12)
+dxx_max = max(dxx_max, 1e-12)
+
+dt_edges = np.linspace(0.0, dt_max, n_bins_dt + 1)
+dxx_edges = np.linspace(0.0, dxx_max, n_bins_dxx + 1)
+
+dt_hist = np.zeros(n_bins_dt, dtype=np.int64)
+dxx_hist = np.zeros(n_bins_dxx, dtype=np.int64)
+
+for f in tqdm(files, desc="Pass 3/3: histogram derivatives"):
+    d = np.load(f)["data"]
+    d = np.maximum(d, 0.0)
+
+    X = np.log1p(d) / scale_temp
+    T, H, W = X.shape
+
+    for row in tqdm(range(H), leave=False):
+        bscan = torch.from_numpy(X[:, row, :]).float()
+
+        dt = d1_dy(bscan).abs().numpy()
+        dxx = d2_dx2(bscan).abs().numpy()
+
+        h_dt, _ = np.histogram(dt, bins=dt_edges)
+        h_dxx, _ = np.histogram(dxx, bins=dxx_edges)
+
+        dt_hist += h_dt
+        dxx_hist += h_dxx
+
+
+scale_dt = float(percentile_from_hist(dt_hist, dt_edges, 99.5))
+scale_dxx = float(percentile_from_hist(dxx_hist, dxx_edges, 99.5))
+
+print("\nComputed dT/dt scale:", scale_dt)
 print("Computed d2T/dx2 scale:", scale_dxx)
 
-# --------------------------------------------------
-# Save all scales
-# --------------------------------------------------
+
+# =========================================================
+# SAVE
+# =========================================================
+
 np.savez(
     r"normalization_params.npz",
     scale=scale_temp,
     scale_dt=scale_dt,
     scale_dxx=scale_dxx
 )
+
+print("\nSaved normalization parameters to normalization_params.npz")
