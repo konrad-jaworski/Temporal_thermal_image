@@ -22,7 +22,7 @@ class BScanDepthDataset(Dataset):
         transform=None,
         dtype=torch.float32,
         normalization_path=None,
-        derivative_mode=None  # None, 'mixed'
+        derivative_mode=None  # None, 'mixed','time','space'
     ):
         self.bscan_dir = bscan_dir
         self.depth_dir = depth_dir
@@ -37,6 +37,8 @@ class BScanDepthDataset(Dataset):
         if self.derivative_mode is not None:
             self.scale_d_dt = config["scale_dt"]
             self.scale_d2_dx2 = config["scale_dxx"]
+            self.scale_d_dx = config["scale_dx"]
+            self.scale_d2_dt2 = config['scale_dtt']
 
         self.resize = Interpolate(size=512)
         self.files = sorted(os.listdir(bscan_dir))
@@ -85,16 +87,20 @@ class BScanDepthDataset(Dataset):
         if self.derivative_mode == "mixed":
             d1 = d1_dy(bscan) / self.scale_d_dt
             d2 = d2_dx2(bscan) / self.scale_d2_dx2
+
+        elif self.derivative_mode== "time":
+            d1=d1_dy(bscan)/self.scale_d_dt
+            d2=d2_dy2(bscan)/self.scale_d2_dt2
+
+        elif self.derivative_mode=="space":
+            d1=d1_dx(bscan)/self.scale_d_dx
+            d2=d2_dx2(bscan)/self.scale_d2_dx2
+
         else:
             raise NotImplementedError(
                 f"derivative_mode='{self.derivative_mode}' not implemented yet. "
-                "Use None or 'mixed'."
+                "Use None or 'mixed' or 'time' or 'space'."
             )
-
-        # Optional clipping
-        # bscan = bscan.clamp(0.0, 1.5)
-        # d1 = d1.clamp(-1.5, 1.5)
-        # d2 = d2.clamp(-1.5, 1.5)
 
         # Resize each channel separately
         bscan = bscan.unsqueeze(0)   # [1, H, W]
