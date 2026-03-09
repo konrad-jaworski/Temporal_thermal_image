@@ -101,7 +101,7 @@ train_dataset = BScanDepthDataset(
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/training/depth",
     transform=train_transforms,
     normalization_path="/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/normalization_params.npz",
-    derivative_mode='time'
+    derivative_mode='space'
 )
 
 val_dataset_clean = BScanDepthDataset(
@@ -109,7 +109,7 @@ val_dataset_clean = BScanDepthDataset(
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/validation/depth",
     transform=None,
     normalization_path="/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/normalization_params.npz",
-    derivative_mode='time'
+    derivative_mode='space'
 )
 
 
@@ -180,7 +180,7 @@ def u_to_depth(u):
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs"
-model_name = "smart_net_first_and_second_time_derivative"
+model_name = "smart_net_first_and_second_space_derivative"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
