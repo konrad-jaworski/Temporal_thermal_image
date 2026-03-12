@@ -11,7 +11,7 @@ class NoiseAddition:
     With modification over the camera response.
     """
 
-    def __init__(self,sigma_min=0.02, sigma_max=0.1):
+    def __init__(self,sigma_min=0.0, sigma_max=0.02):
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
 
@@ -19,6 +19,15 @@ class NoiseAddition:
         sigma = torch.empty(1).uniform_(self.sigma_min, self.sigma_max).item()
         noise = torch.randn_like(bscan) * sigma
         return bscan + noise, depth
+    
+class NoiseAdditionExperiment:
+    def __init__(self, sigma):
+        self.sigma = sigma
+
+    def __call__(self, bscan, depth):
+        noise = torch.randn_like(bscan) * self.sigma
+        bscan_noisy = (bscan + noise).clamp_min(0.0)
+        return bscan_noisy, depth
     
 class RandomHorizontalFlipBscan:
     """
