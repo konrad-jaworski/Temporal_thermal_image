@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from helper_functions.helper_functions import HorizontalShift
+from helper_functions.helper_functions import HorizontalShift,NoiseAddition
 from data.data_operators import BScanDepthDataset, ComposeBScanTransforms
 from networks.Unets import BnetSmallKernelSmarter
 
@@ -89,7 +89,8 @@ class WeightedSmoothL1Sparse(nn.Module):
 # Transforms
 # -------------------------
 train_transforms = ComposeBScanTransforms([
-    HorizontalShift(p=0.3)  # keep as baseline invariance
+    HorizontalShift(p=0.3),  # keep as baseline invariance
+    NoiseAddition()
 ])
 
 
@@ -101,7 +102,7 @@ train_dataset = BScanDepthDataset(
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/training/depth",
     transform=train_transforms,
     normalization_path="/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/normalization_params.npz",
-    derivative_mode='space'
+    derivative_mode=None
 )
 
 val_dataset_clean = BScanDepthDataset(
@@ -109,7 +110,7 @@ val_dataset_clean = BScanDepthDataset(
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/validation/depth",
     transform=None,
     normalization_path="/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/normalization_params.npz",
-    derivative_mode='space'
+    derivative_mode=None
 )
 
 
@@ -180,7 +181,7 @@ def u_to_depth(u):
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs"
-model_name = "smart_net_first_and_second_space_derivative"
+model_name = "smart_net_noisy"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
