@@ -181,7 +181,7 @@ def u_to_depth(u):
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs"
-model_name = "smart_net_noisy"
+model_name = "smart_net_noisy_before_normalization"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 

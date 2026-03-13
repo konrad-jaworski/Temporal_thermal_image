@@ -63,13 +63,13 @@ class BScanDepthDataset(Dataset):
         bscan = torch.from_numpy(bscan).to(self.dtype)
         depth = torch.from_numpy(depth).to(self.dtype)
 
-        # Base preprocessing
-        bscan = torch.log1p(bscan)
-        bscan = bscan / self.scale
-
         # Augmentation on base channel only, before derivatives
         if self.transform is not None:
             bscan, depth = self.transform(bscan, depth)
+
+        # Base preprocessing
+        bscan = torch.log1p(bscan)
+        bscan = bscan / self.scale
 
         # --------------------------------------------------
         # No derivative channels: repeat base image to 3 channels
