@@ -11,7 +11,7 @@ class NoiseAddition:
     With modification over the camera response.
     """
 
-    def __init__(self,sigma_min=0.0, sigma_max=0.13):
+    def __init__(self,sigma_min=0.0, sigma_max=0.8):
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
 

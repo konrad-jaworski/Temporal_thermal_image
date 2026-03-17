@@ -160,6 +160,62 @@ class BnetSmallKernelSmarter(nn.Module):
 
         return out
     
+class Refinement1D(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Conv1d(1, 16, kernel_size=9, padding=4),
+            nn.ReLU(),
+            nn.Conv1d(16, 16, kernel_size=9, padding=4),
+            nn.ReLU(),
+            nn.Conv1d(16, 1, kernel_size=9, padding=4),
+        )
+
+    def forward(self, x):
+        x = x.unsqueeze(1)   # [B, 1, W]
+        x = self.net(x)
+        return x.squeeze(1)
+
+class BnetSmallKernelSmarterRefine(nn.Module):
+    def __init__(
+        self,
+        encoder_name="resnet34",
+        encoder_weights="imagenet",
+        in_channels=3,
+        decoder_channels=256
+    ):
+        super().__init__()
+
+        self.unet = smp.Unet(
+            encoder_name=encoder_name,
+            encoder_weights=encoder_weights,
+            in_channels=in_channels,
+            classes=decoder_channels,
+            activation=None
+        )
+
+        self.vertical_proj = HierarchicalVerticalProjection(decoder_channels)
+
+        self.regressor_smarter = nn.Sequential(
+            nn.Conv1d(decoder_channels, 128, kernel_size=3, padding=1),
+            nn.BatchNorm1d(128),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(128, 64, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(64, 1, kernel_size=1)
+        )
+
+        self.refinement=Refinement1D()
+
+    def forward(self, x):
+        feat = self.unet(x)           # [B, C, H, W]
+        feat = self.vertical_proj(feat)  # [B, C, W]
+        coarse = self.regressor_smarter(feat).squeeze(1)   # [B, W]
+        delta = self.refinement(coarse)                    # [B, W]
+        out = coarse + delta
+        out = torch.sigmoid(out)
+
+        return out
 
     
 class DSConv(nn.Module):

@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from helper_functions.helper_functions import HorizontalShift,NoiseAddition,DefectSlopeDropout
 from data.data_operators import BScanDepthDataset, ComposeBScanTransforms
-from networks.Unets import BnetSmallKernelSmarter
+from networks.Unets import BnetSmallKernelSmarter,BnetSmallKernelSmarterRefine
 
 
 # -------------------------
@@ -89,7 +89,6 @@ class WeightedSmoothL1Sparse(nn.Module):
 # Transforms
 # -------------------------
 train_transforms = ComposeBScanTransforms([
-    DefectSlopeDropout(p=0.3),
     HorizontalShift(p=0.3),  # keep as baseline invariance
     NoiseAddition()
 ])
@@ -147,7 +146,8 @@ val_loader_clean = DataLoader(
 # -------------------------
 # Model / loss / optimizer
 # -------------------------
-model = BnetSmallKernelSmarter().to(device)
+# model = BnetSmallKernelSmarter().to(device)
+model = BnetSmallKernelSmarterRefine().to(device)
 
 # NEW LOSS (Stage 1 ablation)
 # criterion = WeightedSmoothL1Sparse(
@@ -160,7 +160,13 @@ model = BnetSmallKernelSmarter().to(device)
 # MSE loss (Stage 1 baseline)
 criterion = nn.MSELoss()
 
-optimizer = optim.Adam(model.parameters(), lr=1e-4)
+optimizer = optim.Adam(model.parameters(), lr=1e-4) # This was previous configuration
+
+# optimizer = optim.Adam([
+#     {"params": model.unet.parameters(), "lr": 1e-4},
+#     {"params": model.vertical_proj.parameters(), "lr": 1e-3},
+#     {"params": model.regressor_smarter.parameters(), "lr": 1e-3}
+# ])
 
 # Optional: stable training if you see spikes
 GRAD_CLIP_NORM = 1.0  # set e.g. 1.0 if needed
@@ -182,7 +188,7 @@ def u_to_depth(u):
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs"
-model_name = "smart_net_noisy_and_dropout"
+model_name = "smart_net_noisy_refinement"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -303,8 +309,9 @@ run_config = {
     "num_workers": 24,
     "lr": 1e-4,
     "loss": "MSE",
-    "channels": "X, dT/dt, d2T/dt2",
-    "derivative_mode": "time",
+    "channels": "Repeated",
+    "derivative_mode": "None",
+    "Model":"Refinement type",
     "hshift_p": 0.3,
     "patience": patience,
 }
