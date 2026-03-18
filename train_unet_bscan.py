@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from helper_functions.helper_functions import HorizontalShift,NoiseAddition,DefectSlopeDropout
 from data.data_operators import BScanDepthDataset, ComposeBScanTransforms
-from networks.Unets import BnetSmallKernelSmarter,BnetSmallKernelSmarterRefine
+from networks.Unets import BnetSmallKernelSmarter,BnetSmallKernelSmarterRefine,BnetMean
 
 
 # -------------------------
@@ -147,7 +147,8 @@ val_loader_clean = DataLoader(
 # Model / loss / optimizer
 # -------------------------
 # model = BnetSmallKernelSmarter().to(device)
-model = BnetSmallKernelSmarterRefine().to(device)
+# model = BnetSmallKernelSmarterRefine().to(device)
+model = BnetMean().to(device)
 
 # NEW LOSS (Stage 1 ablation)
 # criterion = WeightedSmoothL1Sparse(
@@ -188,7 +189,7 @@ def u_to_depth(u):
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs"
-model_name = "smart_net_noisy_refinement"
+model_name = "mean_net_noisy"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -311,7 +312,7 @@ run_config = {
     "loss": "MSE",
     "channels": "Repeated",
     "derivative_mode": "None",
-    "Model":"Refinement type",
+    "Model":"mean type",
     "hshift_p": 0.3,
     "patience": patience,
 }

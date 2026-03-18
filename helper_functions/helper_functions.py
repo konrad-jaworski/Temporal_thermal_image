@@ -11,14 +11,14 @@ class NoiseAddition:
     With modification over the camera response.
     """
 
-    def __init__(self,sigma_min=0.0, sigma_max=0.8):
+    def __init__(self,sigma_min=0.0, sigma_max=0.1):
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
 
     def __call__(self, bscan, depth):
         sigma = torch.empty(1).uniform_(self.sigma_min, self.sigma_max).item()
         noise = torch.randn_like(bscan) * sigma
-        return bscan + noise, depth
+        return (bscan + noise).clamp_min(0.0), depth
     
 class NoiseAdditionExperiment:
     def __init__(self, sigma):
