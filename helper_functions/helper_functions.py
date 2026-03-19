@@ -531,6 +531,9 @@ def visMet(pred_all,mask_all,step_to,thickness,visualization=True,break_index=No
         rmse_roi_norm = nanmean(rmse_roi_list)
         mae_bg_norm = nanmean(mae_bg_list)
         abs_err_defect_norm = nanmean(abs_err_defect_list)
+        abs_err_defect_mean_norm = nanmean(abs_err_defect_list_mean)
+        abs_err_defect_25_norm = nanmean(abs_err_defect_list_25)
+        abs_err_defect_75_norm = nanmean(abs_err_defect_list_75)
 
         print("\n=== PAPER METRICS Global (normalized 0..1) ===")
         print(f"ROI MAE (mean):          {mae_glob_norm:.6f}")
@@ -546,4 +549,8 @@ def visMet(pred_all,mask_all,step_to,thickness,visualization=True,break_index=No
         print("\n=== Depth prediction over ROI (mm), thickness ===")
         print(f"Defect abs err (median): {abs_err_defect_norm:.6f}")
         print(f"Defect abs err (median): {abs_err_defect_norm * thickness:.4f} mm")
+        print(f"Defect abs err (mean): {abs_err_defect_mean_norm * thickness:.4f} mm")
+        print(f"Defect abs err (q25): {abs_err_defect_25_norm * thickness:.4f} mm")
+        print(f"Defect abs err (q75): {abs_err_defect_75_norm * thickness:.4f} mm")
+
        
