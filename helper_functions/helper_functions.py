@@ -474,7 +474,7 @@ def visMet(pred_all,mask_all,step_to,thickness,visualization=True,break_index=No
                 plt.subplot(2, 2, 2)
                 plt.imshow(gt_np, aspect="auto",vmin=0,vmax=1)
                 plt.colorbar(shrink=0.7)
-                plt.title('Ground truth')
+                plt.title(f'Ground truth depth of defect: {gt_np.max():.2f}')
 
                 plt.subplot(2, 2, 3)
                 plt.imshow(err_np, cmap='seismic', vmin=-v, vmax=v, aspect="auto")
@@ -485,7 +485,7 @@ def visMet(pred_all,mask_all,step_to,thickness,visualization=True,break_index=No
                 # summary text panel (paper-friendly)
                 plt.axis("off")
 
-                # convert normalized errors to mm (since thickness=4mm and target is 0..1)
+                # convert normalized errors to mm
                 mae_roi_mm = mae_roi_list[-1] * thickness if not np.isnan(mae_roi_list[-1]) else np.nan
                 medae_roi_mm = medae_roi_list[-1] * thickness if not np.isnan(medae_roi_list[-1]) else np.nan
                 rmse_roi_mm = rmse_roi_list[-1] * thickness if not np.isnan(rmse_roi_list[-1]) else np.nan
@@ -499,7 +499,7 @@ def visMet(pred_all,mask_all,step_to,thickness,visualization=True,break_index=No
                     f"ROI MAE (mm):    {mae_roi_mm:.4f}",
                     f"ROI MedAE (mm):  {medae_roi_mm:.4f}",
                     f"ROI RMSE (mm):   {rmse_roi_mm:.4f}",
-                    f"Defect |median(pred)-median(gt)| (mm): {abs_err_defect_mm:.4f}",
+                    f"Defect |median(pred)-(gt)| (mm): {abs_err_defect_mm:.4f}",
                     f"BG MAE (mm):     {mae_bg_mm:.4f}",
                 ]),
                 va="top", ha="left", fontsize=12
