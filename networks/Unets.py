@@ -176,6 +176,7 @@ class Refinement1D(nn.Module):
         x = self.net(x)
         return x.squeeze(1)
 
+
 class BnetSmallKernelSmarterRefine(nn.Module):
     def __init__(
         self,
