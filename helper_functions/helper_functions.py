@@ -373,10 +373,12 @@ def visMet(pred_all,mask_all,step_to,thickness,visualization=True,break_index=No
     mae_bg_list = []            # false positives in sound region
 
     # single-depth proxy: Method selection
-    abs_err_defect_list = []    
+    abs_err_defect_list = []   
+    abs_err_defect_list_mean = []
+    abs_err_defect_list_25 = []
+    abs_err_defect_list_75 = []
 
-    # (optional) keep one scalar per frame for quick plotting ??????
-    roi_fraction_list = []
+    
 
     # This we are using to plot specific cases over simulations
     index_for_breaking=0
@@ -417,15 +419,27 @@ def visMet(pred_all,mask_all,step_to,thickness,visualization=True,break_index=No
                 mae_roi_list.append(mae_roi)
                 medae_roi_list.append(medae_roi)
                 rmse_roi_list.append(rmse_roi)
-
+                
+                # --------------------------------------------- Most interesting part------------------
                 # Single-number "defect depth" proxy (robust):Median over ROI
-                # depth_pred=pred_t[roi].median().item()
-                depth_pred=torch.quantile(pred_t[roi],0.75).item()
-                depth_gt = gt_t[roi].mean().item() # We only have homogeneus values 
-                abs_err_defect = abs(depth_pred - depth_gt)
-                abs_err_defect_list.append(abs_err_defect)
+                depth_pred_mean=pred_t[roi].mean().item()
+                depth_pred=pred_t[roi].median().item()
+                depth_pred_25=torch.quantile(pred_t[roi],0.25).item()
+                depth_pred_75=torch.quantile(pred_t[roi],0.75).item()
 
-                roi_fraction_list.append(float(roi.float().mean().item()))
+
+                depth_gt = gt_t[roi].mean().item() # We only have homogeneus values 
+
+
+                abs_err_defect = abs(depth_pred - depth_gt)
+                abs_err_mean = abs(depth_pred_mean - depth_gt)
+                abs_err_75 = abs(depth_pred_75 - depth_gt)
+                abs_err_25 = abs(depth_pred_25 - depth_gt)
+
+                abs_err_defect_list.append(abs_err_defect)
+                abs_err_defect_list_mean.append(abs_err_mean)
+                abs_err_defect_list_25.append(abs_err_25)
+                abs_err_defect_list_75.append(abs_err_75)
             
             else:
                 # No defect present in this chunk (if that can happen)
@@ -433,7 +447,6 @@ def visMet(pred_all,mask_all,step_to,thickness,visualization=True,break_index=No
                 medae_roi_list.append(np.nan)
                 rmse_roi_list.append(np.nan)
                 abs_err_defect_list.append(np.nan)
-                roi_fraction_list.append(0.0)
 
             # Metric over background false positive
             if bg.any():
@@ -488,7 +501,6 @@ def visMet(pred_all,mask_all,step_to,thickness,visualization=True,break_index=No
                     f"ROI RMSE (mm):   {rmse_roi_mm:.4f}",
                     f"Defect |median(pred)-median(gt)| (mm): {abs_err_defect_mm:.4f}",
                     f"BG MAE (mm):     {mae_bg_mm:.4f}",
-                    f"ROI fraction:    {roi_fraction_list[-1]:.4f}",
                 ]),
                 va="top", ha="left", fontsize=12
                 )
