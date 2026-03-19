@@ -3,6 +3,10 @@ import random
 import torch
 import torchvision.transforms.functional as TF
 import torch.nn.functional as F
+import imageio
+import time
+from IPython.display import clear_output
+from matplotlib import pyplot as plt
 
 
 class NoiseAddition:
@@ -345,3 +349,189 @@ class TSR_extrapolation:
         
 
         return Y_hat,a,Y_extra
+    
+# Validation metrics: 
+
+def visMet(pred_all,mask_all,step_to,thickness,visualization=True,break_index=None,display_time=1):
+    step=step_to
+    N = pred_all.shape[0]
+    # Detaching tensors from the graph speed/repro
+    pred_all_detach = pred_all.detach()
+    gt_all_detach = mask_all.detach()
+
+    # Accumulation for global error
+    mae_glob_list=[]
+    medae_glob_list=[]
+    rmse_glob_list=[]
+    
+    # Accumulators for roi metric
+    mae_roi_list = []
+    medae_roi_list = []
+    rmse_roi_list = []
+
+    # Accumulation for baground
+    mae_bg_list = []            # false positives in sound region
+
+    # single-depth proxy: Method selection
+    abs_err_defect_list = []    
+
+    # (optional) keep one scalar per frame for quick plotting ??????
+    roi_fraction_list = []
+
+    # This we are using to plot specific cases over simulations
+    index_for_breaking=0
+
+    with torch.no_grad():
+        for start in range(0, N, step):
+            end = min(start + step, N)
+
+            # One simulation at a time
+            pred_t = pred_all_detach[start:end, :]  # [B, W]
+            gt_t   = gt_all_detach[start:end, :]    # [B, W]
+
+            # ROI from GT (defect region)
+            roi = gt_t > 0
+            bg  = gt_t == 0
+            
+            # Global metric
+            err_glob=(pred_t-gt_t).abs() # Absolute error over golabal range
+
+            mae_glob = err_glob.mean().item()
+            medae_glob = err_glob.median().item()
+            rmse_glob = torch.sqrt(((pred_t-gt_t)**2).mean()).item()
+
+            mae_glob_list.append(mae_glob)
+            medae_glob_list.append(medae_glob)
+            rmse_glob_list.append(rmse_glob) 
+
+            # ---- Paper metrics (NO mean-filling) ----
+            if roi.any():
+                # Metric over region of interes
+                err_roi = (pred_t[roi] - gt_t[roi]).abs() # Absolute error over ROI
+
+                # General reconstruction of shape and values over roi
+                mae_roi  = err_roi.mean().item() # MAE to report
+                medae_roi = err_roi.median().item() # MedAE to 
+                rmse_roi = torch.sqrt(((pred_t[roi] - gt_t[roi]) ** 2).mean()).item() # Investigation of outliers
+
+                mae_roi_list.append(mae_roi)
+                medae_roi_list.append(medae_roi)
+                rmse_roi_list.append(rmse_roi)
+
+                # Single-number "defect depth" proxy (robust):Median over ROI
+                # depth_pred=pred_t[roi].median().item()
+                depth_pred=torch.quantile(pred_t[roi],0.75).item()
+                depth_gt = gt_t[roi].mean().item() # We only have homogeneus values 
+                abs_err_defect = abs(depth_pred - depth_gt)
+                abs_err_defect_list.append(abs_err_defect)
+
+                roi_fraction_list.append(float(roi.float().mean().item()))
+            
+            else:
+                # No defect present in this chunk (if that can happen)
+                mae_roi_list.append(np.nan)
+                medae_roi_list.append(np.nan)
+                rmse_roi_list.append(np.nan)
+                abs_err_defect_list.append(np.nan)
+                roi_fraction_list.append(0.0)
+
+            # Metric over background false positive
+            if bg.any():
+                mae_bg = pred_t[bg].abs().mean().item()
+            else:
+                mae_bg = np.nan
+            mae_bg_list.append(mae_bg)
+
+            # Fixed error scale for visualization only (consistent colors) per chunk
+            vis_err = (pred_t - gt_t)
+            v = float(vis_err.abs().max())
+
+            if visualization==True:
+                pred_np = pred_t.cpu().numpy() # Raw prediction
+                gt_np   = gt_t.cpu().numpy() # Gt mask
+                err_np  = (pred_t - gt_t).numpy() # We want to show in which areas is overestimated and in which we underestimate
+                clear_output(wait=True)
+                fig = plt.figure(figsize=(18, 10))
+
+                plt.subplot(2, 2, 1)
+                plt.imshow(pred_np, aspect="auto",vmin=0,vmax=1)
+                plt.colorbar(shrink=0.7)
+                plt.title(f'Prediction rows {start}:{end}')
+
+                plt.subplot(2, 2, 2)
+                plt.imshow(gt_np, aspect="auto",vmin=0,vmax=1)
+                plt.colorbar(shrink=0.7)
+                plt.title('Ground truth')
+
+                plt.subplot(2, 2, 3)
+                plt.imshow(err_np, cmap='seismic', vmin=-v, vmax=v, aspect="auto")
+                plt.colorbar(shrink=0.7)
+                plt.title('Error: pred - GT (fixed scale)')
+
+                plt.subplot(2, 2, 4)
+                # summary text panel (paper-friendly)
+                plt.axis("off")
+
+                # convert normalized errors to mm (since thickness=4mm and target is 0..1)
+                mae_roi_mm = mae_roi_list[-1] * thickness if not np.isnan(mae_roi_list[-1]) else np.nan
+                medae_roi_mm = medae_roi_list[-1] * thickness if not np.isnan(medae_roi_list[-1]) else np.nan
+                rmse_roi_mm = rmse_roi_list[-1] * thickness if not np.isnan(rmse_roi_list[-1]) else np.nan
+                abs_err_defect_mm = abs_err_defect_list[-1] * thickness if not np.isnan(abs_err_defect_list[-1]) else np.nan
+                mae_bg_mm = mae_bg_list[-1] * thickness if not np.isnan(mae_bg_list[-1]) else np.nan
+
+                plt.text(
+                0.02, 0.98,
+                "\n".join([
+                    f"ROI MAE (norm):  {mae_roi_list[-1]:.6f}",
+                    f"ROI MAE (mm):    {mae_roi_mm:.4f}",
+                    f"ROI MedAE (mm):  {medae_roi_mm:.4f}",
+                    f"ROI RMSE (mm):   {rmse_roi_mm:.4f}",
+                    f"Defect |median(pred)-median(gt)| (mm): {abs_err_defect_mm:.4f}",
+                    f"BG MAE (mm):     {mae_bg_mm:.4f}",
+                    f"ROI fraction:    {roi_fraction_list[-1]:.4f}",
+                ]),
+                va="top", ha="left", fontsize=12
+                )
+                fig.tight_layout()
+                plt.show()
+                time.sleep(display_time)
+
+            index_for_breaking=index_for_breaking+1
+            if index_for_breaking !=None:
+                pass
+            elif index_for_breaking==break_index:
+                break
+        
+        # -----------------------------
+        # Final dataset-level reporting
+        # -----------------------------
+        def nanmean(x): return float(np.nanmean(np.array(x, dtype=np.float64)))
+        def nanmedian(x): return float(np.nanmedian(np.array(x, dtype=np.float64)))
+
+        # Metrics for over all dataset
+
+        mae_glob_norm = nanmean(mae_glob_list)
+        medae_glob_norm = nanmedian(medae_glob_list)
+        rmse_glob_norm = nanmean(rmse_glob_list)
+
+        mae_roi_norm = nanmean(mae_roi_list)
+        medae_roi_norm = nanmedian(medae_roi_list)
+        rmse_roi_norm = nanmean(rmse_roi_list)
+        mae_bg_norm = nanmean(mae_bg_list)
+        abs_err_defect_norm = nanmean(abs_err_defect_list)
+
+        print("\n=== PAPER METRICS Global (normalized 0..1) ===")
+        print(f"ROI MAE (mean):          {mae_glob_norm:.6f}")
+        print(f"ROI MedAE (median):      {medae_glob_norm:.6f}")
+        print(f"ROI RMSE (mean):         {rmse_glob_norm:.6f}")
+
+        print("\n=== PAPER METRICS ROI (normalized 0..1) ===")
+        print(f"ROI MAE (mean):          {mae_roi_norm:.6f}")
+        print(f"ROI MedAE (median):      {medae_roi_norm:.6f}")
+        print(f"ROI RMSE (mean):         {rmse_roi_norm:.6f}")
+        print(f"BG MAE (mean):           {mae_bg_norm:.6f}")
+
+        print("\n=== Depth prediction over ROI (mm), thickness ===")
+        print(f"Defect abs err (median): {abs_err_defect_norm:.6f}")
+        print(f"Defect abs err (median): {abs_err_defect_norm * thickness:.4f} mm")
+       

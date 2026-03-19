@@ -164,11 +164,11 @@ class Refinement1D(nn.Module):
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Conv1d(1, 16, kernel_size=17, padding=8), # Normally a 9 was tested
+            nn.Conv1d(1, 16, kernel_size=9, padding=4), # Normally a 9 was tested 5 and 17
             nn.ReLU(),
-            nn.Conv1d(16, 16, kernel_size=17, padding=8), # Same 
+            nn.Conv1d(16, 16, kernel_size=9, padding=4), # Same 
             nn.ReLU(),
-            nn.Conv1d(16, 1, kernel_size=17, padding=8), # same
+            nn.Conv1d(16, 1, kernel_size=9, padding=4), # same
         )
 
     def forward(self, x):
