@@ -429,7 +429,7 @@ def fit_plateau_1d(pred, threshold=0.03, method='trim'):
 
     return best_plateau
 
-def visMet(pred_all,mask_all,step_to,thickness,visualization=True,break_index=None,display_time=1,mode='trim'):
+def visMet(pred_all,mask_all,step_to,thickness,visualization=True,break_index=None,display_time=1,mode='trim',depth=0.7):
     step=step_to
     N = pred_all.shape[0]
     # Detaching tensors from the graph speed/repro
@@ -465,10 +465,10 @@ def visMet(pred_all,mask_all,step_to,thickness,visualization=True,break_index=No
             end = min(start + step, N)
 
             # One simulation at a time
-            pred_t = pred_all_detach[start:end, :]  # [B, W]
+            pred_t = pred_all_detach[start:end, :].clone()  # [B, W]
             gt_t   = gt_all_detach[start:end, :]    # [B, W]\
 
-            for i in range(step):
+            for i in range(pred_t.shape[0]):
                 pred_t[i,:]=fit_plateau_1d(pred_t[i,:],method=mode)
 
             # ROI from GT (defect region)
@@ -515,11 +515,13 @@ def visMet(pred_all,mask_all,step_to,thickness,visualization=True,break_index=No
                 abs_err_mean = abs(depth_pred_mean - depth_gt)
                 abs_err_75 = abs(depth_pred_75 - depth_gt)
                 abs_err_25 = abs(depth_pred_25 - depth_gt)
-                if gt_t[roi].mean()<0.5:
+
+                if np.abs((depth_gt-depth))<0.05:
                     abs_err_defect_list.append(abs_err_defect)
                     abs_err_defect_list_mean.append(abs_err_mean)
                     abs_err_defect_list_25.append(abs_err_25)
                     abs_err_defect_list_75.append(abs_err_75)
+                
             
             else:
                 # No defect present in this chunk (if that can happen)
