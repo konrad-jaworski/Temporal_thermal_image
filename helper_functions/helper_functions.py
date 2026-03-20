@@ -350,9 +350,86 @@ class TSR_extrapolation:
 
         return Y_hat,a,Y_extra
     
-# Validation metrics: 
+# Validation metrics: -----------------------------------------------------------------------------------
 
-def visMet(pred_all,mask_all,step_to,thickness,visualization=True,break_index=None,display_time=1):
+def fit_plateau_1d(pred, threshold=0.03, method='trim'):
+    pred = pred.clone()
+
+    mask = pred > threshold
+
+    if mask.sum() == 0:
+        plateau = torch.zeros_like(pred)
+        return plateau
+
+    coords = mask.nonzero(as_tuple=True)[0]
+
+    best_loss = float("inf")
+    best_params = None
+    best_plateau = None
+    best_c = None  
+
+    for shrink in range(0, 20):
+
+        x_min = coords.min() + shrink
+        x_max = coords.max() - shrink
+
+        if x_min >= x_max:
+            continue
+
+        segment = pred[x_min:x_max+1]
+
+        # ---- estimator selection ----
+        if method == 'mean':
+            c = segment.mean()
+
+        elif method == 'median':
+            c = segment.median()
+
+        elif method == 'q25':
+            c = torch.quantile(segment, 0.25)
+
+        elif method == 'q75':
+            c = torch.quantile(segment, 0.75)
+
+        elif method == 'trim':
+            sorted_vals, _ = torch.sort(segment)
+            n = len(sorted_vals)
+            k = int(0.1 * n)
+
+            if n > 2 * k:
+                trimmed = sorted_vals[k:-k]
+            else:
+                trimmed = sorted_vals
+
+            c = trimmed.median()
+
+        else:
+            raise ValueError(f"Unknown method: {method}")
+
+        plateau = torch.zeros_like(pred)
+        plateau[x_min:x_max+1] = c
+
+        loss = ((pred - plateau)**2).mean()
+
+        if loss < best_loss:
+            best_loss = loss
+            best_params = (x_min.item(), x_max.item())
+            best_plateau = plateau
+            best_c = c
+
+    if best_plateau is None:
+        x_min = coords.min()
+        x_max = coords.max()
+        segment = pred[x_min:x_max+1]
+
+        best_c = segment.median()
+        best_plateau = torch.zeros_like(pred)
+        best_plateau[x_min:x_max+1] = best_c
+        best_params = (x_min.item(), x_max.item())
+
+    return best_plateau
+
+def visMet(pred_all,mask_all,step_to,thickness,visualization=True,break_index=None,display_time=1,mode='trim'):
     step=step_to
     N = pred_all.shape[0]
     # Detaching tensors from the graph speed/repro
@@ -389,7 +466,10 @@ def visMet(pred_all,mask_all,step_to,thickness,visualization=True,break_index=No
 
             # One simulation at a time
             pred_t = pred_all_detach[start:end, :]  # [B, W]
-            gt_t   = gt_all_detach[start:end, :]    # [B, W]
+            gt_t   = gt_all_detach[start:end, :]    # [B, W]\
+
+            for i in range(step):
+                pred_t[i,:]=fit_plateau_1d(pred_t[i,:],method=mode)
 
             # ROI from GT (defect region)
             roi = gt_t > 0
@@ -435,11 +515,11 @@ def visMet(pred_all,mask_all,step_to,thickness,visualization=True,break_index=No
                 abs_err_mean = abs(depth_pred_mean - depth_gt)
                 abs_err_75 = abs(depth_pred_75 - depth_gt)
                 abs_err_25 = abs(depth_pred_25 - depth_gt)
-
-                abs_err_defect_list.append(abs_err_defect)
-                abs_err_defect_list_mean.append(abs_err_mean)
-                abs_err_defect_list_25.append(abs_err_25)
-                abs_err_defect_list_75.append(abs_err_75)
+                if gt_t[roi].mean()<0.5:
+                    abs_err_defect_list.append(abs_err_defect)
+                    abs_err_defect_list_mean.append(abs_err_mean)
+                    abs_err_defect_list_25.append(abs_err_25)
+                    abs_err_defect_list_75.append(abs_err_75)
             
             else:
                 # No defect present in this chunk (if that can happen)
