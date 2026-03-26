@@ -223,12 +223,13 @@ def mask_to_defect_list(mask, sample_size=0.1):
                 depth_val = mask[ys[0], xs[0]]
 
                 # --- convert to physical ---
-                pos_x = cx * scale
-                pos_y = cy * scale
-                size = 2 * r * scale  # diameter in meters
+                pos_x = round(cx * scale, 3)
+                pos_y = round(cy * scale, 3)
+                size  = round(2 * r * scale, 3) # We save diameter for the simulation case
 
                 # reverse depth convention
-                depth_percent = (1 - depth_val) * 100
+                
+                depth_percent = int(round((1 - depth_val) * 100))
 
                 defects.append({
                     "pos_x": float(pos_x),
@@ -239,38 +240,3 @@ def mask_to_defect_list(mask, sample_size=0.1):
 
     return defects
 
-def save_dataset_npz(filename, mask, defect_list):
-    """
-    Save mask + defect list into npz
-    """
-
-    # convert list of dicts → structured arrays
-    pos_x = np.array([d["pos_x"] for d in defect_list])
-    pos_y = np.array([d["pos_y"] for d in defect_list])
-    size = np.array([d["size"] for d in defect_list])
-    depth = np.array([d["depth"] for d in defect_list])
-
-    np.savez(
-        filename,
-        mask=mask,
-        pos_x=pos_x,
-        pos_y=pos_y,
-        size=size,
-        depth=depth
-    )
-
-def load_dataset_npz(filename):
-    data = np.load(filename)
-
-    mask = data["mask"]
-
-    defect_list = []
-    for i in range(len(data["pos_x"])):
-        defect_list.append({
-            "pos_x": float(data["pos_x"][i]),
-            "pos_y": float(data["pos_y"][i]),
-            "size": float(data["size"][i]),
-            "depth": float(data["depth"][i]),
-        })
-
-    return mask, defect_list
