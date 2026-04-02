@@ -4,7 +4,6 @@ import glob
 
 def extract_rowwise_bscan_and_targets(
     input_folder,
-    output_X_folder,
     output_depth_folder,
     lower_bound,
     upper_bound
@@ -14,12 +13,10 @@ def extract_rowwise_bscan_and_targets(
 
     For each row index i in [lower_bound, upper_bound):
       - Save data[:, i, :] as one training sample
-      - Save mask[i] as classification target
       - Save mask[i] * depth_factor as regression target
     """
 
     # Creation of the specific folders
-    os.makedirs(output_X_folder, exist_ok=True)
     os.makedirs(output_depth_folder, exist_ok=True)
 
     # Checking if folder contain npz file
@@ -53,18 +50,11 @@ def extract_rowwise_bscan_and_targets(
             X = data[:, i, :]                   # [T, W]
 
             # --- Classification target ---
-            Y = np.array(mask[i], dtype=np.uint8)
-
-            # --- Regression target ---
-            depth_target = np.array(
-                mask[i] * depth_factor,
-                dtype=np.float32
-            )
+            depth_target = np.array(mask[i], dtype=np.float32)
 
             # unique filename per row
             fname = f"{base_name}_row_{i:04d}"
 
-            np.save(os.path.join(output_X_folder, fname + ".npy"), X)
             np.save(os.path.join(output_depth_folder, fname + ".npy"), depth_target)
 
             sample_counter += 1
@@ -72,16 +62,14 @@ def extract_rowwise_bscan_and_targets(
     print(f"Done. Saved {sample_counter} row-wise samples.")
 
 
-input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/test"
-output_X_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/test/data"
-output_depth_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/test/depth"
+input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/testing_rb"
+output_depth_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/testing_bscan"
 
 lower_bound = 0
 upper_bound = 512
 
 extract_rowwise_bscan_and_targets(
     input_folder,
-    output_X_folder,
     output_depth_folder,
     lower_bound,
     upper_bound

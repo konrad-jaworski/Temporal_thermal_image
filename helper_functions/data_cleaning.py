@@ -2,6 +2,11 @@ import os
 import shutil
 import hashlib
 
+# This script collects .npz files from multiple source directories into a single destination directory,
+# while ensuring that:
+# 1. macOS metadata files (starting with "._") are excluded.
+# 2. Duplicate files (based on content hash) are not copied multiple times.
+# 3. If a file with the same name but different content exists, it is renamed to avoid overwriting.
 
 def file_hash(path, chunk_size=8192):
     """Compute SHA256 hash of a file."""

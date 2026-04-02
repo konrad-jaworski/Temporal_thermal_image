@@ -39,11 +39,6 @@ def preprocess_deltaT(
         # subtract baseline
         deltaT = data_tr - T0
 
-        # Add noise
-        noise_level = np.random.uniform(0.01, 0.1)
-        noise = np.random.randn(*deltaT.shape) * noise_level
-        deltaT += noise
-
         # Prepare dictionary to save
         save_dict = {key: data_npz[key] for key in data_npz.files}  # copy all keys
         save_dict['data'] = deltaT  # replace 'data' key
@@ -54,8 +49,8 @@ def preprocess_deltaT(
     
     print(f"Preprocessing done. Files saved to {output_folder}")
 
-input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Models_lc_and_test_data/all_data_same_length_no_base_add_noise_test/Test_sample_sim_4_mm_different_length"
-output_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Models_lc_and_test_data/all_data_same_length_no_base_add_noise_test/Test_sample_sim_4_mm_different_length/Preprocessed"
-baseline_frames = 4  # you can change this
+input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/testing"
+output_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/testing_rb"
+baseline_frames = 1  # you can change this depending on how many initial frames you want to consider as baseline
 
 preprocess_deltaT(input_folder, output_folder, baseline_frames)
