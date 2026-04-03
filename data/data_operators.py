@@ -22,7 +22,9 @@ class BScanDepthDataset(Dataset):
         transform=None,
         dtype=torch.float32,
         normalization_path=None,
-        derivative_mode=None  # None, 'mixed','time','space'
+        derivative_mode=None,  # None, 'mixed','time','space'
+        cooling_phase=True,
+        cooling_frame=254, # obtained from metadata
     ):
         self.bscan_dir = bscan_dir
         self.depth_dir = depth_dir
@@ -30,6 +32,8 @@ class BScanDepthDataset(Dataset):
         self.dtype = dtype
         self.path = normalization_path
         self.derivative_mode = derivative_mode
+        self.cooling_phase = cooling_phase
+        self.cooling_frame = cooling_frame
 
         config = np.load(self.path, allow_pickle=True)
         self.scale = config["scale"]
@@ -40,7 +44,7 @@ class BScanDepthDataset(Dataset):
             self.scale_d_dx = config["scale_dx"]
             self.scale_d2_dt2 = config['scale_dtt']
 
-        self.resize = Interpolate(size=512)
+        self.resize = Interpolate(size=512) # This assumes that the width of the Bscan is 512. If not, you may want to set size=(512,512) and specify the interpolation mode for each axis separately.
         self.files = sorted(os.listdir(bscan_dir))
 
         for f in self.files:
@@ -63,12 +67,15 @@ class BScanDepthDataset(Dataset):
         bscan = torch.from_numpy(bscan).to(self.dtype)
         depth = torch.from_numpy(depth).to(self.dtype)
 
-        # Augmentation on base channel only, before derivatives
+        if self.cooling_phase:
+            bscan=bscan[self.cooling_frame:,:]
+        
+        # Augmentation on base channel only, before derivatives and this mimics the outputs from the real data better if we augment before scaling
         if self.transform is not None:
             bscan, depth = self.transform(bscan, depth)
 
-        # Base preprocessing
-        bscan = torch.log1p(bscan)
+        # Base preprocessing with log1p scaling and normalization
+        bscan = torch.log1p(bscan) # this is the point of confusion
         bscan = bscan / self.scale
 
         # --------------------------------------------------

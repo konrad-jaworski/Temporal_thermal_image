@@ -8,9 +8,9 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from helper_functions.helper_functions import HorizontalShift,NoiseAddition,DefectSlopeDropout
+from helper_functions.helper_functions import HorizontalShift,NoiseAddition,RandomHorizontalFlipBscan
 from data.data_operators import BScanDepthDataset, ComposeBScanTransforms
-from networks.Unets import BnetSmallKernelSmarter,BnetSmallKernelSmarterRefine,BnetMean
+from networks.Unets import BnetSmallKernelSmarterRefine,BnetMean
 
 
 # -------------------------
@@ -89,28 +89,28 @@ class WeightedSmoothL1Sparse(nn.Module):
 # Transforms
 # -------------------------
 train_transforms = ComposeBScanTransforms([
-    HorizontalShift(p=0.3),  # keep as baseline invariance
-    NoiseAddition()
+    NoiseAddition(), # Detectore wise noise addition
+    RandomHorizontalFlipBscan(p=0.2), # keep as abseline invariance
+    HorizontalShift(p=0.2),  # keep as baseline invariance
 ])
-
 
 # -------------------------
 # Datasets
 # -------------------------
 train_dataset = BScanDepthDataset(
-    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/training/data",
-    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/training/depth",
+    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_bscan",
+    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_mask",
     transform=train_transforms,
-    normalization_path="/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/normalization_params.npz",
-    derivative_mode=None
+    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params.npz",
+    derivative_mode='space'
 )
 
 val_dataset_clean = BScanDepthDataset(
-    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/validation/data",
-    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/validation/depth",
+    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_bscan",
+    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_mask",
     transform=None,
-    normalization_path="/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/normalization_params.npz",
-    derivative_mode=None
+    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params.npz",
+    derivative_mode='space'
 )
 
 
@@ -146,7 +146,7 @@ val_loader_clean = DataLoader(
 # -------------------------
 # Model / loss / optimizer
 # -------------------------
-# model = BnetSmallKernelSmarter().to(device)
+
 model = BnetSmallKernelSmarterRefine().to(device)
 # model = BnetMean().to(device)
 
@@ -161,7 +161,7 @@ model = BnetSmallKernelSmarterRefine().to(device)
 # MSE loss (Stage 1 baseline)
 criterion = nn.MSELoss()
 
-optimizer = optim.Adam(model.parameters(), lr=1e-4) # This was previous configuration
+optimizer = optim.Adam(model.parameters(), lr=1e-4) 
 
 # optimizer = optim.Adam([
 #     {"params": model.unet.parameters(), "lr": 1e-4},
@@ -172,8 +172,8 @@ optimizer = optim.Adam(model.parameters(), lr=1e-4) # This was previous configur
 # Optional: stable training if you see spikes
 GRAD_CLIP_NORM = 1.0  # set e.g. 1.0 if needed
 
+# -------------------------
 # Stage 2: non-linear prediction
-
 non_linear_pred=False
 EPS = 1e-6
 
@@ -182,14 +182,14 @@ def depth_to_u(depth):
 
 def u_to_depth(u):
     return (u.clamp(0.0, 1.0) ** 2)
-
+# -------------------------
 
 
 # -------------------------
 # Save paths
 # -------------------------
-main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs"
-model_name = "smart_net_noisy_bigger_kernel"
+main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs_official"
+model_name = "smart_net_refine_space_derivatives"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -203,7 +203,7 @@ last_path = os.path.join(model_dir, "last_model.pth")
 num_epochs = 500
 best_clean_loss = float("inf")
 
-patience = 50
+patience = 30
 min_delta = 1e-5
 counter = 0
 
@@ -310,11 +310,10 @@ run_config = {
     "num_workers": 24,
     "lr": 1e-4,
     "loss": "MSE",
-    "channels": "Repeated",
-    "derivative_mode": "None",
-    "Model":"mean type",
-    "hshift_p": 0.3,
-    "patience": patience,
+    "channels": "Space derivative",
+    "derivative_mode": "Space",
+    "Model":"Smartnet refine",
+    "patience": patience
 }
 torch.save(run_config, os.path.join(model_dir, "run_config.pt"))
 

@@ -2,9 +2,9 @@ import numpy as np
 import glob
 import torch
 from tqdm import tqdm
-from helper_functions.helper_functions import d1_dy, d2_dx2,d1_dx,d2_dy2
+from helper_functions import d1_dy, d2_dx2,d1_dx,d2_dy2
 
-train_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/all_data_extrapolated/training/*.npz"
+train_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb/*.npz"
 files = sorted(glob.glob(train_folder))
 
 print(f"Found {len(files)} training cubes")

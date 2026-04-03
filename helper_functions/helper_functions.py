@@ -7,31 +7,27 @@ import imageio
 import time
 from IPython.display import clear_output
 from matplotlib import pyplot as plt
+import math
+from tqdm import tqdm
 
+# Augmentation: -----------------------------------------------------------------------------------
 
 class NoiseAddition:
-    """
-    Add Gaussian noise to B-scan only, keep depth unchanged.
-    With modification over the camera response.
-    """
-
-    def __init__(self,sigma_min=0.0, sigma_max=0.1):
+    def __init__(self, sigma_mean=0.065, sigma_std=0.01, sigma_min=0.04, sigma_max=0.09):
+        self.sigma_mean = sigma_mean
+        self.sigma_std = sigma_std
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
 
     def __call__(self, bscan, depth):
-        sigma = torch.empty(1).uniform_(self.sigma_min, self.sigma_max).item()
+        sigma = torch.normal(
+            mean=torch.tensor(self.sigma_mean),
+            std=torch.tensor(self.sigma_std)
+        ).item()
+        sigma = max(self.sigma_min, min(self.sigma_max, sigma))
+
         noise = torch.randn_like(bscan) * sigma
         return (bscan + noise).clamp_min(0.0), depth
-    
-class NoiseAdditionExperiment:
-    def __init__(self, sigma):
-        self.sigma = sigma
-
-    def __call__(self, bscan, depth):
-        noise = torch.randn_like(bscan) * self.sigma
-        bscan_noisy = (bscan + noise).clamp_min(0.0)
-        return bscan_noisy, depth
     
 class RandomHorizontalFlipBscan:
     """
@@ -62,30 +58,7 @@ class RandomHorizontalFlipBscan:
         if random.random() < self.p:
             X = torch.flip(X, dims=[-1])      # flip W
             mask = torch.flip(mask, dims=[-1])
-        return X, mask
-    
-class TwoDefect:
-    """
-    Class which can produce two defects by flipping the simulation and concatenating
-    """
-    def __init__(self,p=0.5):
-        self.p=p
-    
-    def __call__(self,X,mask):
-        if random.random() < self.p:
-            H,W=X.size()
-            W_center=W//2
-            X_flip=torch.flip(X,dims=[-1])
-            mask_flip=torch.flip(mask,dims=[-1])
-            if X[:,0].sum()==0:
-                X_new=torch.cat((X[:,W_center:],X_flip[:,:W_center]),dim=1)
-                mask_new=torch.cat((mask[W_center:],mask_flip[:W_center]),dim=0)
-            else:
-                X_new=torch.cat((X[:,:W_center],X_flip[:,W_center:]),dim=1)
-                mask_new=torch.cat((mask[:W_center],mask_flip[W_center:]),dim=0)
-            return X_new, mask_new
-        else:
-            return X,mask
+        return X, mask   
 
 class HorizontalShift:
     """
@@ -124,64 +97,10 @@ class HorizontalShift:
             mask_shifted = mask_pad[:W]
 
         return X_shifted, mask_shifted
-
-    
-class DefectSlopeDropout:
-    """
-    Drops a horizontal band (partial height) over the defect columns span.
-    Biases dropout to early/mid/late parts of the slope.
-    """
-    def __init__(self, p=0.2, height_frac_range=(0.15, 0.3), width_pad_range=(0, 10), where_probs=(0.33, 0.34, 0.33)):
-        self.p = p
-        self.height_frac_range = height_frac_range
-        self.width_pad_range = width_pad_range
-        self.where_probs = where_probs  # (early, mid, late)
-
-    def __call__(self, X, mask):
-        if random.random() >= self.p:
-            return X, mask
-
-        H, W = X.shape
-        idx = torch.where(mask > 0)[0]
-        if idx.numel() == 0:
-            return X, mask
-
-        left = int(idx[0].item())
-        right = int(idx[-1].item())
-        pad = random.randint(*self.width_pad_range)
-        x0 = max(0, left - pad)
-        x1 = min(W, right + pad + 1)
-
-        frac = random.uniform(*self.height_frac_range)
-        h = max(1, int(frac * H))
-
-        region_choice = random.choices(["early", "mid", "late"], weights=self.where_probs, k=1)[0]
-
-        def randint_safe(a, b):
-            a = int(a); b = int(b)
-            if b < a:
-                return a
-            return random.randint(a, b)
-
-        if region_choice == "early":
-            y0 = randint_safe(0, (H // 3) - h)
-
-        elif region_choice == "late":
-            y0 = randint_safe(2 * H // 3, H - h)
-
-        else:  # mid
-            mid_start = H // 3
-            mid_end = (2 * H // 3) - h
-            y0 = randint_safe(mid_start, mid_end)
-
-        y0 = max(0, min(y0, H - h))
-        y1 = y0 + h
-
-        X_out = X.clone()
-        X_out[y0:y1, x0:x1] = 0.0
-        return X_out, mask
+   
 
 # Derivatives approximation --------------------------------------------------------------------------------------------------------
+
 def d1_dy(X: torch.Tensor) -> torch.Tensor:
     """
     First derivative along height (H axis / rows).
@@ -222,7 +141,6 @@ def d1_dx(X: torch.Tensor) -> torch.Tensor:
     return d
 
 
-
 def d2_dx2(X: torch.Tensor)->torch.Tensor:
     """
     Second derivative along width (W axis/ columns)
@@ -233,7 +151,9 @@ def d2_dx2(X: torch.Tensor)->torch.Tensor:
     d2[:, -1]= d2[:, -2]
 
     return d2
-    
+
+# Interpolation and extrapolation methods: -----------------------------------------------------------------------------------
+
 class Interpolate:
     """
     Interpolate data to a new size using PyTorch's interpolate function.
@@ -247,392 +167,594 @@ class Interpolate:
         data_interpolated = torch.nn.functional.interpolate(data.unsqueeze(0), size=self.size, mode=self.mode, align_corners=False)
         return data_interpolated.squeeze(0)
     
-    
-class TSR_extrapolation:
-    """
-    TSR with extrapolation of data up to 2*t_c2 (t_c2 is the characteristic time of cooling of the sample).
-    The function returns reconstructed data (Y_hat) and coefficients of the polynomial (a) and extrapolated data (Y_extra).
-    """
-    def __init__(self):
-        pass
-
-    def converttofloat(self,value,double=True):
-        if double:
-            y=np.array(value,dtype=np.float64)
-        else:
-            y=np.array(value,dtype=np.float32)
-        return y
-
-    def __call__(self, data,ord=3,extrapolate=True):
-        """
-        Parameters:
-        -----------
-        data: dictionary with keys 'data' and 'meta' containing the thermal imaging data
-        ord: order of the polynomial used for reconstruction and extrapolation (default is 2)
-        extrapolate: whether to perform extrapolation of data (default is True)
-
-        Returns:
-        Y_hat: reconstructed data
-        a: coefficients of the polynomial
-        Y_extra: extrapolated data (only if extrapolate=True)
-        """
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        Y=data['data']
-        fps=self.converttofloat(data['meta'][9][1]) # FPS 
-        thickness=self.converttofloat(data['meta'][19][1]) # Thickness of a sample
-        k=self.converttofloat(data['meta'][25][1]) # Thermal conductivity
-        density=self.converttofloat(data['meta'][27][1]) # Density
-        sheat=self.converttofloat(data['meta'][29][1]) # Specific heat of a sample
-
-        # We find the point of cooling and max temperature
-        idx=np.argmax(Y,axis=0)
-        idx=idx[0][0] # just assumption that for all the instances higiest temperature is at the same frame
-        # We extract length of the 
-        L,H,W=Y[idx:,:,:].shape
-
-        # Removal of the baseline (assuming that the data has 5 frames corresponding to room temperature)
-        if Y[:5].mean()<Y[:-5].mean():
-            mean_to_sub=Y[:5].mean()
-            Y=Y-mean_to_sub
-        else:
-            print("Baseline is higher than the rest of the data, check the data and remove baseline manually if needed")
-        
-        # Moving to log scale
-        Y=torch.from_numpy(Y).to(torch.double)
-        Y=Y.to(device)
-        Y_log=torch.log(Y)
-
-        # Shortening and movig it to the device
-        Y2=torch.reshape(Y_log[idx:,:,:],(L,H*W)) # L x ( H x W )
-        
-        # Create log time characteristic
-
-        t = torch.arange(1, L+1, device=device, dtype=torch.double)  # 1..L
-        x_log = torch.log(t)
-        
-        # Generate vandermonde matrix 
-        V=torch.vander(x_log,ord,increasing=True)
-        
-        # Generate coeficient vector 
-        a=torch.linalg.pinv(V) @ Y2
-
-        # Reconstruction of the Y matrix
-        Y_hat=V @ a
-
-        Y_hat=torch.exp(Y_hat)
-        Y_hat=torch.reshape(Y_hat,(L,H,W))
-
-        # Conditiononing for extrapolation
-
-        if extrapolate==False:
-            return Y_hat,a
-
-        # Formulate new time vector 
-        t_c2=2*(thickness**2/(k/(density*sheat)))
-        ft_c2=np.round(fps*t_c2)
-        x_p=torch.arange(1,ft_c2+1,device=device,dtype=torch.double) # 1..L_prime
-        x_log_p=torch.log(x_p)
-
-        # New Vandermond matrix
-        V_p=torch.vander(x_log_p,ord,increasing=True)
-
-        # Extrapolated data
-        Y_extra=V_p @ a
-
-        Y_extra=torch.exp(Y_extra)
-        Y_extra=torch.reshape(Y_extra,(-1,H,W))
-
-        # Correction of the first frame of the extrapolated data to match the first frame of the original data
-        if Y_extra[0,:,:].mean()>Y[idx,:,:].mean():
-            Y_extra[0,:,:]=Y[idx,:,:]
-        
-
-        return Y_hat,a,Y_extra
-    
 # Validation metrics: -----------------------------------------------------------------------------------
 
-def fit_plateau_1d(pred, threshold=0.03, method='trim'):
-    pred = pred.clone()
+class NoiseAdditionExperiment:
+    def __init__(self, sigma):
+        self.sigma = sigma
 
-    mask = pred > threshold
+    def __call__(self, bscan, depth):
+        noise = torch.randn_like(bscan) * self.sigma
+        bscan_noisy = (bscan + noise).clamp_min(0.0)
+        return bscan_noisy, depth
 
-    if mask.sum() == 0:
-        plateau = torch.zeros_like(pred)
-        return plateau
+def visualize_global_prediction(pred_all,mask_all,n):
+    """
+    It takes all of the predictions and masks plot individual simulation with Absolute error between them
 
-    coords = mask.nonzero(as_tuple=True)[0]
+    """
+    plt.figure(figsize=(15,12))
+    plt.subplot(1,3,1)
+    plt.imshow(pred_all[(n-1)*512:n*512,:])
+    plt.xlabel('Pixel width')
+    plt.ylabel('Pixel height')
+    plt.title('Predicted Field of view')
 
-    best_loss = float("inf")
-    best_params = None
-    best_plateau = None
-    best_c = None  
+    plt.subplot(1,3,2)
+    plt.imshow(mask_all[(n-1)*512:n*512,:])
+    plt.xlabel('Pixel width')
+    plt.ylabel('Pixel height')
+    plt.title('Ground truth Field of view')
 
-    for shrink in range(0, 20):
+    plt.subplot(1,3,3)
+    plt.imshow(torch.abs(pred_all[(n-1)*512:n*512,:]-mask_all[(n-1)*512:n*512,:]))
+    plt.title('Absolute error')
+    plt.colorbar(label='Normalized depth error',shrink=0.3)
+    plt.xlabel('Pixel width')
+    plt.ylabel('Pixel height')
+    plt.tight_layout()
 
-        x_min = coords.min() + shrink
-        x_max = coords.max() - shrink
+def visualize_bscan_prediction(pred_all,mask_all,n,level):
+    """
+    Function which visualize prediction over single B-scan at the same time presenting the depth seen by the network
+    """
+    plt.plot(pred_all[level+512*n,:])
+    plt.plot(mask_all[level+512*n,:])
+    plt.grid(alpha=0.3)
 
-        if x_min >= x_max:
-            continue
+    W = 512
+    x = np.arange(W)
 
-        segment = pred[x_min:x_max+1]
+    for y_val in np.arange(0.1, 1.0, 0.1):
+        y = np.full(W, y_val)
+        plt.plot(x, y, color='red', linewidth=2,alpha=0.3)
 
-        # ---- estimator selection ----
-        if method == 'mean':
-            c = segment.mean()
+    plt.xlabel('Frame width [px]')
+    plt.ylabel('Normalized depth')
+    plt.title('Single B-scan evaluation')
 
-        elif method == 'median':
-            c = segment.median()
 
-        elif method == 'q25':
-            c = torch.quantile(segment, 0.25)
+def compute_dataset_depth_metrics(
+    pred_all,
+    gt_all,
+    depth_levels,
+    tol=1e-6,
+    thickness_mm=None,
+    include_background=True,
+):
+    """
+    Compute dataset-level metrics from concatenated tensors [N, W].
 
-        elif method == 'q75':
-            c = torch.quantile(segment, 0.75)
+    Parameters
+    ----------
+    pred_all : torch.Tensor
+        Predictions, shape [N, W]
+    gt_all : torch.Tensor
+        Ground truth, shape [N, W]
+    depth_levels : list
+        Possible depth levels, e.g. [0.1, 0.3, 0.5, 0.7, 0.9]
+    tol : float
+        Float tolerance for matching depth levels
+    thickness_mm : float or None
+        If provided, also report metrics in mm
+    include_background : bool
+        If True, also compute background MAE / MedAE / RMSE
 
-        elif method == 'trim':
-            sorted_vals, _ = torch.sort(segment)
-            n = len(sorted_vals)
-            k = int(0.1 * n)
+    Returns
+    -------
+    results : dict
+        Dataset-level global and per-level metrics
+    """
+    pred_all = torch.as_tensor(pred_all).float()
+    gt_all = torch.as_tensor(gt_all).float()
 
-            if n > 2 * k:
-                trimmed = sorted_vals[k:-k]
-            else:
-                trimmed = sorted_vals
+    if pred_all.ndim != 2 or gt_all.ndim != 2:
+        raise ValueError(f"Expected [N, W] tensors, got pred {pred_all.shape}, gt {gt_all.shape}")
 
-            c = trimmed.median()
+    if pred_all.shape != gt_all.shape:
+        raise ValueError(f"Shape mismatch: pred {pred_all.shape}, gt {gt_all.shape}")
 
-        else:
-            raise ValueError(f"Unknown method: {method}")
+    # ------------------------------
+    # Compute absolute and squared errors over the whole dataset
+    # ------------------------------
+    abs_err = (pred_all - gt_all).abs()
+    sq_err = (pred_all - gt_all) ** 2
 
-        plateau = torch.zeros_like(pred)
-        plateau[x_min:x_max+1] = c
+    def _safe_mean(x):
+        return x.mean().item() if x.numel() > 0 else float("nan")
 
-        loss = ((pred - plateau)**2).mean()
+    def _safe_median(x):
+        return x.median().item() if x.numel() > 0 else float("nan")
 
-        if loss < best_loss:
-            best_loss = loss
-            best_params = (x_min.item(), x_max.item())
-            best_plateau = plateau
-            best_c = c
+    def _safe_rmse(x):
+        return torch.sqrt(x.mean()).item() if x.numel() > 0 else float("nan")
 
-    if best_plateau is None:
-        x_min = coords.min()
-        x_max = coords.max()
-        segment = pred[x_min:x_max+1]
+    # -----------------------------
+    # Global defect-only metrics over defect regions
+    # -----------------------------
+    roi_mask = gt_all > 0
+    roi_abs = abs_err[roi_mask]
+    roi_sq = sq_err[roi_mask]
 
-        best_c = segment.median()
-        best_plateau = torch.zeros_like(pred)
-        best_plateau[x_min:x_max+1] = best_c
-        best_params = (x_min.item(), x_max.item())
+    results = {
+        "global": {
+            "mae": _safe_mean(roi_abs),
+            "medae": _safe_median(roi_abs),
+            "rmse": _safe_rmse(roi_sq),
+            "count": int(roi_mask.sum().item()),
+        },
+        "per_level": {},
+        "dataset": {
+            "num_bscans": int(pred_all.shape[0]),
+            "width": int(pred_all.shape[1]),
+            "num_columns_total": int(pred_all.numel()),
+        }
+    }
 
-    return best_plateau
+    # -----------------------------
+    # Per-depth-level metrics
+    # -----------------------------
+    for level in depth_levels:
+        level = float(level)
+        level_mask = torch.abs(gt_all - level) < tol
 
-def visMet(pred_all,mask_all,step_to,thickness,visualization=True,break_index=None,display_time=1,mode='trim',depth=0.7):
-    step=step_to
-    N = pred_all.shape[0]
-    # Detaching tensors from the graph speed/repro
-    pred_all_detach = pred_all.detach()
-    gt_all_detach = mask_all.detach()
+        level_abs = abs_err[level_mask]
+        level_sq = sq_err[level_mask]
 
-    # Accumulation for global error
-    mae_glob_list=[]
-    medae_glob_list=[]
-    rmse_glob_list=[]
-    
-    # Accumulators for roi metric
-    mae_roi_list = []
-    medae_roi_list = []
-    rmse_roi_list = []
+        results["per_level"][level] = {
+            "mae": _safe_mean(level_abs),
+            "medae": _safe_median(level_abs),
+            "rmse": _safe_rmse(level_sq),
+            "count": int(level_mask.sum().item()),
+        }
 
-    # Accumulation for baground
-    mae_bg_list = []            # false positives in sound region
+    # -----------------------------
+    # Background metrics
+    # -----------------------------
+    if include_background:
+        bg_mask = torch.abs(gt_all) < tol
+        bg_abs = abs_err[bg_mask]
+        bg_sq = sq_err[bg_mask]
 
-    # single-depth proxy: Method selection
-    abs_err_defect_list = []   
-    abs_err_defect_list_mean = []
-    abs_err_defect_list_25 = []
-    abs_err_defect_list_75 = []
+        results["background"] = {
+            "mae": _safe_mean(bg_abs),
+            "medae": _safe_median(bg_abs),
+            "rmse": _safe_rmse(bg_sq),
+            "count": int(bg_mask.sum().item()),
+        }
 
-    
+    # -----------------------------
+    # Convert to mm if requested
+    # -----------------------------
+    if thickness_mm is not None:
+        results["global_mm"] = {
+            "mae": results["global"]["mae"] * thickness_mm if results["global"]["mae"] == results["global"]["mae"] else float("nan"),
+            "medae": results["global"]["medae"] * thickness_mm if results["global"]["medae"] == results["global"]["medae"] else float("nan"),
+            "rmse": results["global"]["rmse"] * thickness_mm if results["global"]["rmse"] == results["global"]["rmse"] else float("nan"),
+        }
 
-    # This we are using to plot specific cases over simulations
-    index_for_breaking=0
+        results["per_level_mm"] = {}
+        for level, vals in results["per_level"].items():
+            results["per_level_mm"][level] = {
+                "mae": vals["mae"] * thickness_mm if vals["mae"] == vals["mae"] else float("nan"),
+                "medae": vals["medae"] * thickness_mm if vals["medae"] == vals["medae"] else float("nan"),
+                "rmse": vals["rmse"] * thickness_mm if vals["rmse"] == vals["rmse"] else float("nan"),
+                "count": vals["count"],
+            }
+
+        if include_background and "background" in results:
+            results["background_mm"] = {
+                "mae": results["background"]["mae"] * thickness_mm if results["background"]["mae"] == results["background"]["mae"] else float("nan"),
+                "medae": results["background"]["medae"] * thickness_mm if results["background"]["medae"] == results["background"]["medae"] else float("nan"),
+                "rmse": results["background"]["rmse"] * thickness_mm if results["background"]["rmse"] == results["background"]["rmse"] else float("nan"),
+                "count": results["background"]["count"],
+            }
+
+    return results
+
+def print_dataset_depth_metrics(results, thickness_mm=None):
+    def fmt(x):
+        return "nan" if not (x == x) else f"{x:.6f}"
+
+    print("=== DATASET GLOBAL ROI METRICS ===")
+    print(f"MAE:   {fmt(results['global']['mae'])}")
+    print(f"MedAE: {fmt(results['global']['medae'])}")
+    print(f"RMSE:  {fmt(results['global']['rmse'])}")
+    print(f"Count: {results['global']['count']}")
+
+    if thickness_mm is not None and "global_mm" in results:
+        print("\n=== DATASET GLOBAL ROI METRICS [mm] ===")
+        print(f"MAE:   {fmt(results['global_mm']['mae'])} mm")
+        print(f"MedAE: {fmt(results['global_mm']['medae'])} mm")
+        print(f"RMSE:  {fmt(results['global_mm']['rmse'])} mm")
+
+    print("\n=== PER-DEPTH-LEVEL ROI METRICS ===")
+    for level, vals in results["per_level"].items():
+        print(
+            f"Depth={level:.3f} | "
+            f"MAE={fmt(vals['mae'])} | "
+            f"MedAE={fmt(vals['medae'])} | "
+            f"RMSE={fmt(vals['rmse'])} | "
+            f"Count={vals['count']}"
+        )
+
+    if thickness_mm is not None and "per_level_mm" in results:
+        print("\n=== PER-DEPTH-LEVEL ROI METRICS [mm] ===")
+        for level, vals in results["per_level_mm"].items():
+            print(
+                f"Depth={level:.3f} | "
+                f"MAE={fmt(vals['mae'])} mm | "
+                f"MedAE={fmt(vals['medae'])} mm | "
+                f"RMSE={fmt(vals['rmse'])} mm | "
+                f"Count={vals['count']}"
+            )
+
+    if "background" in results:
+        print("\n=== BACKGROUND METRICS ===")
+        print(f"MAE:   {fmt(results['background']['mae'])}")
+        print(f"MedAE: {fmt(results['background']['medae'])}")
+        print(f"RMSE:  {fmt(results['background']['rmse'])}")
+        print(f"Count: {results['background']['count']}")
+
+        if thickness_mm is not None and "background_mm" in results:
+            print("\n=== BACKGROUND METRICS [mm] ===")
+            print(f"MAE:   {fmt(results['background_mm']['mae'])} mm")
+            print(f"MedAE: {fmt(results['background_mm']['medae'])} mm")
+            print(f"RMSE:  {fmt(results['background_mm']['rmse'])} mm")
+
+
+def compute_iou_over_concatenated_sims(
+    pred_all,
+    gt_all,
+    sim_size=512,
+    pred_threshold=0.03,
+    gt_threshold=0.0,
+    eps=1e-8,
+):
+    """
+    Compute IoU globally and per simulation from concatenated tensors.
+
+    Parameters
+    ----------
+    pred_all : torch.Tensor
+        Predicted depth tensor, shape [N, W]
+    gt_all : torch.Tensor
+        Ground-truth depth tensor, shape [N, W]
+    sim_size : int
+        Number of rows belonging to one simulation block
+    pred_threshold : float
+        Threshold for predicted defect mask
+    gt_threshold : float
+        Threshold for GT defect mask (usually 0.0 if gt>0 defines ROI)
+    eps : float
+        Small constant for numerical safety
+
+    Returns
+    -------
+    results : dict
+        {
+            "global_iou": float,
+            "global_intersection": int,
+            "global_union": int,
+            "num_sims": int,
+            "per_sim_iou": list,
+            "per_sim_intersection": list,
+            "per_sim_union": list,
+        }
+    """
+    pred_all = torch.as_tensor(pred_all).float()
+    gt_all = torch.as_tensor(gt_all).float()
+
+    if pred_all.ndim != 2 or gt_all.ndim != 2:
+        raise ValueError(f"Expected [N, W], got pred {pred_all.shape}, gt {gt_all.shape}")
+
+    if pred_all.shape != gt_all.shape:
+        raise ValueError(f"Shape mismatch: pred {pred_all.shape}, gt {gt_all.shape}")
+
+    n_rows = pred_all.shape[0]
+    if n_rows % sim_size != 0:
+        raise ValueError(
+            f"Number of rows ({n_rows}) is not divisible by sim_size ({sim_size})"
+        )
+
+    pred_mask = pred_all > pred_threshold
+    gt_mask = gt_all > gt_threshold
+
+    # -------- global IoU --------
+    global_intersection = (pred_mask & gt_mask).sum().item()
+    global_union = (pred_mask | gt_mask).sum().item()
+    global_iou = global_intersection / (global_union + eps)
+
+    # -------- per-simulation IoU --------
+    num_sims = n_rows // sim_size
+    per_sim_iou = []
+    per_sim_intersection = []
+    per_sim_union = []
+
+    for i in range(num_sims):
+        start = i * sim_size
+        end = (i + 1) * sim_size
+
+        pred_chunk = pred_mask[start:end]
+        gt_chunk = gt_mask[start:end]
+
+        inter = (pred_chunk & gt_chunk).sum().item()
+        union = (pred_chunk | gt_chunk).sum().item()
+        iou = inter / (union + eps)
+
+        per_sim_intersection.append(int(inter))
+        per_sim_union.append(int(union))
+        per_sim_iou.append(float(iou))
+
+    results = {
+        "global_iou": float(global_iou),
+        "global_intersection": int(global_intersection),
+        "global_union": int(global_union),
+        "num_sims": int(num_sims),
+        "per_sim_iou": per_sim_iou,
+        "per_sim_intersection": per_sim_intersection,
+        "per_sim_union": per_sim_union,
+    }
+
+    return results
+
+def print_iou_results(results):
+    print("=== GLOBAL IoU ===")
+    print(f"IoU:          {results['global_iou']:.6f}")
+    print(f"Intersection: {results['global_intersection']}")
+    print(f"Union:        {results['global_union']}")
+    print(f"Num sims:     {results['num_sims']}")
+
+    print("\n=== PER-SIMULATION IoU ===")
+    for i, (iou, inter, union) in enumerate(
+        zip(
+            results["per_sim_iou"],
+            results["per_sim_intersection"],
+            results["per_sim_union"],
+        )
+    ):
+        print(
+            f"Sim {i:02d} | "
+            f"IoU={iou:.6f} | "
+            f"Intersection={inter} | "
+            f"Union={union}"
+        )
+
+def network_eval_run(model, loader, non_linear_pred=False, device='cuda'):
+    """
+    Simple eval loop for prediction gathering.
+
+    Returns
+    -------
+    pred_all : torch.Tensor
+        Concatenated predictions
+    mask_all : torch.Tensor
+        Concatenated ground truth
+    err_all : torch.Tensor
+        Signed error = pred - gt
+    abs_err_all : torch.Tensor
+        Absolute error = |pred - gt|
+    """
+    model.eval()
+
+    pred_all = []
+    mask_all = []
+    err_all = []
+    abs_err_all = []
 
     with torch.no_grad():
-        for start in range(0, N, step):
-            end = min(start + step, N)
+        for X, mask in tqdm(loader):
+            X = X.to(device)
+            mask = mask.to(device)
 
-            # One simulation at a time
-            pred_t = pred_all_detach[start:end, :].clone()  # [B, W]
-            gt_t   = gt_all_detach[start:end, :]    # [B, W]\
+            pred = model(X)
 
-            for i in range(pred_t.shape[0]):
-                pred_t[i,:]=fit_plateau_1d(pred_t[i,:],method=mode)
+            if non_linear_pred:
+                pred = pred.clamp(0, 1)
+                pred = pred ** 2
+                pred = pred.clamp(0, 1)
 
-            # ROI from GT (defect region)
-            roi = gt_t > 0
-            bg  = gt_t == 0
-            
-            # Global metric
-            err_glob=(pred_t-gt_t).abs() # Absolute error over golabal range
+            err = pred - mask
+            abs_err = err.abs()
 
-            mae_glob = err_glob.mean().item()
-            medae_glob = err_glob.median().item()
-            rmse_glob = torch.sqrt(((pred_t-gt_t)**2).mean()).item()
+            pred_all.append(pred.cpu())
+            mask_all.append(mask.cpu())
+            err_all.append(err.cpu())
+            abs_err_all.append(abs_err.cpu())
 
-            mae_glob_list.append(mae_glob)
-            medae_glob_list.append(medae_glob)
-            rmse_glob_list.append(rmse_glob) 
+    pred_all = torch.cat(pred_all, dim=0)
+    mask_all = torch.cat(mask_all, dim=0)
+    err_all = torch.cat(err_all, dim=0)
+    abs_err_all = torch.cat(abs_err_all, dim=0)
 
-            # ---- Paper metrics (NO mean-filling) ----
-            if roi.any():
-                # Metric over region of interes
-                err_roi = (pred_t[roi] - gt_t[roi]).abs() # Absolute error over ROI
+    return pred_all, mask_all, err_all, abs_err_all
 
-                # General reconstruction of shape and values over roi
-                mae_roi  = err_roi.mean().item() # MAE to report
-                medae_roi = err_roi.median().item() # MedAE to 
-                rmse_roi = torch.sqrt(((pred_t[roi] - gt_t[roi]) ** 2).mean()).item() # Investigation of outliers
+def plot_error_histograms_with_levels(
+    pred_all,
+    gt_all,
+    depth_levels,
+    bins=80,
+    tol=1e-6,
+    roi_only=True,
+    plot_absolute=True,
+    max_cols=3,
+    figsize_per_plot=(5, 4),
+):
+    """
+    Plot global and per-depth-level error histograms.
 
-                mae_roi_list.append(mae_roi)
-                medae_roi_list.append(medae_roi)
-                rmse_roi_list.append(rmse_roi)
-                
-                # --------------------------------------------- Most interesting part------------------
-                # Single-number "defect depth" proxy (robust):Median over ROI
-                depth_pred_mean=pred_t[roi].mean().item()
-                depth_pred=pred_t[roi].median().item()
-                depth_pred_25=torch.quantile(pred_t[roi],0.25).item()
-                depth_pred_75=torch.quantile(pred_t[roi],0.75).item()
+    Parameters
+    ----------
+    pred_all : torch.Tensor
+        Prediction tensor, shape [N, W] or compatible
+    gt_all : torch.Tensor
+        Ground-truth tensor, same shape as pred_all
+    depth_levels : list
+        Possible defect depth levels, e.g. [0.1, 0.3, 0.5, 0.7, 0.9]
+    bins : int
+        Number of histogram bins
+    tol : float
+        Tolerance for matching depth level
+    roi_only : bool
+        If True, global histogram is computed only for ROI (gt > 0)
+    plot_absolute : bool
+        If True, also plot absolute error histograms
+    max_cols : int
+        Max subplot columns
+    figsize_per_plot : tuple
+        Size per subplot block
+    """
+    pred_all = torch.as_tensor(pred_all).float()
+    gt_all = torch.as_tensor(gt_all).float()
 
+    if pred_all.shape != gt_all.shape:
+        raise ValueError(f"Shape mismatch: pred {pred_all.shape}, gt {gt_all.shape}")
 
-                depth_gt = gt_t[roi].mean().item() # We only have homogeneus values 
+    err_all = pred_all - gt_all
+    abs_err_all = err_all.abs()
 
+    # -------------------------
+    # Global mask
+    # -------------------------
+    if roi_only:
+        global_mask = gt_all > 0
+        global_title_suffix = "ROI only"
+    else:
+        global_mask = torch.ones_like(gt_all, dtype=torch.bool)
+        global_title_suffix = "All pixels"
 
-                abs_err_defect = abs(depth_pred - depth_gt)
-                abs_err_mean = abs(depth_pred_mean - depth_gt)
-                abs_err_75 = abs(depth_pred_75 - depth_gt)
-                abs_err_25 = abs(depth_pred_25 - depth_gt)
+    global_err = err_all[global_mask].cpu().numpy()
+    global_abs_err = abs_err_all[global_mask].cpu().numpy()
 
-                if np.abs((depth_gt-depth))<0.05:
-                    abs_err_defect_list.append(abs_err_defect)
-                    abs_err_defect_list_mean.append(abs_err_mean)
-                    abs_err_defect_list_25.append(abs_err_25)
-                    abs_err_defect_list_75.append(abs_err_75)
-                
-            
+    # -------------------------
+    # Global signed histogram
+    # -------------------------
+    plt.figure(figsize=(7, 5))
+    plt.hist(global_err, bins=bins)
+    plt.axvline(0.0, linestyle='--')
+    plt.axvline(global_err.mean(), linestyle='-')
+    plt.title(f"Global signed error histogram ({global_title_suffix})")
+    plt.xlabel("Signed error = pred - gt")
+    plt.ylabel("Count")
+    plt.show()
+
+    # -------------------------
+    # Global absolute histogram
+    # -------------------------
+    if plot_absolute:
+        plt.figure(figsize=(7, 5))
+        plt.hist(global_abs_err, bins=bins)
+        plt.title(f"Global absolute error histogram ({global_title_suffix})")
+        plt.xlabel("Absolute error = |pred - gt|")
+        plt.ylabel("Count")
+        plt.show()
+
+    # -------------------------
+    # Per-level signed histograms
+    # -------------------------
+    n_levels = len(depth_levels)
+    ncols = min(max_cols, n_levels)
+    nrows = math.ceil(n_levels / ncols)
+
+    fig, axes = plt.subplots(
+        nrows, ncols,
+        figsize=(figsize_per_plot[0] * ncols, figsize_per_plot[1] * nrows)
+    )
+    axes = axes.flatten() if n_levels > 1 else [axes]
+
+    for i, level in enumerate(depth_levels):
+        level = float(level)
+        ax = axes[i]
+
+        level_mask = torch.abs(gt_all - level) < tol
+        level_err = err_all[level_mask].cpu().numpy()
+
+        if len(level_err) > 0:
+            ax.hist(level_err, bins=bins)
+            ax.axvline(0.0, linestyle='--')
+            ax.axvline(level_err.mean(), linestyle='-')
+            ax.set_title(f"Depth={level:.3f}\nN={len(level_err)}")
+            ax.set_xlabel("pred - gt")
+            ax.set_ylabel("Count")
+        else:
+            ax.set_title(f"Depth={level:.3f}\nNo samples")
+            ax.axis("off")
+
+    for j in range(len(depth_levels), len(axes)):
+        axes[j].axis("off")
+
+    fig.suptitle("Signed error histograms by depth level", y=1.02)
+    plt.tight_layout()
+    plt.show()
+
+    # -------------------------
+    # Per-level absolute histograms
+    # -------------------------
+    if plot_absolute:
+        fig, axes = plt.subplots(
+            nrows, ncols,
+            figsize=(figsize_per_plot[0] * ncols, figsize_per_plot[1] * nrows)
+        )
+        axes = axes.flatten() if n_levels > 1 else [axes]
+
+        for i, level in enumerate(depth_levels):
+            level = float(level)
+            ax = axes[i]
+
+            level_mask = torch.abs(gt_all - level) < tol
+            level_abs = abs_err_all[level_mask].cpu().numpy()
+
+            if len(level_abs) > 0:
+                ax.hist(level_abs, bins=bins)
+                ax.set_title(f"Depth={level:.3f}\nN={len(level_abs)}")
+                ax.set_xlabel("|pred - gt|")
+                ax.set_ylabel("Count")
             else:
-                # No defect present in this chunk (if that can happen)
-                mae_roi_list.append(np.nan)
-                medae_roi_list.append(np.nan)
-                rmse_roi_list.append(np.nan)
-                abs_err_defect_list.append(np.nan)
+                ax.set_title(f"Depth={level:.3f}\nNo samples")
+                ax.axis("off")
 
-            # Metric over background false positive
-            if bg.any():
-                mae_bg = pred_t[bg].abs().mean().item()
-            else:
-                mae_bg = np.nan
-            mae_bg_list.append(mae_bg)
+        for j in range(len(depth_levels), len(axes)):
+            axes[j].axis("off")
 
-            # Fixed error scale for visualization only (consistent colors) per chunk
-            vis_err = (pred_t - gt_t)
-            v = float(vis_err.abs().max())
+        fig.suptitle("Absolute error histograms by depth level", y=1.02)
+        plt.tight_layout()
+        plt.show()
 
-            if visualization==True:
-                pred_np = pred_t.cpu().numpy() # Raw prediction
-                gt_np   = gt_t.cpu().numpy() # Gt mask
-                err_np  = (pred_t - gt_t).numpy() # We want to show in which areas is overestimated and in which we underestimate
-                clear_output(wait=True)
-                fig = plt.figure(figsize=(18, 10))
+    # -------------------------
+    # Print summary statistics
+    # -------------------------
+    print("=== GLOBAL ERROR STATS ===")
+    if len(global_err) > 0:
+        print(f"Mean signed error:   {global_err.mean():.6f}")
+        print(f"Median signed error: {torch.tensor(global_err).median().item():.6f}")
+        print(f"Mean absolute error: {global_abs_err.mean():.6f}")
+    else:
+        print("No global samples found.")
 
-                plt.subplot(2, 2, 1)
-                plt.imshow(pred_np, aspect="auto",vmin=0,vmax=1)
-                plt.colorbar(shrink=0.7)
-                plt.title(f'Prediction rows {start}:{end}')
+    print("\n=== PER-LEVEL ERROR STATS ===")
+    for level in depth_levels:
+        level = float(level)
+        level_mask = torch.abs(gt_all - level) < tol
+        level_err = err_all[level_mask]
+        level_abs = abs_err_all[level_mask]
 
-                plt.subplot(2, 2, 2)
-                plt.imshow(gt_np, aspect="auto",vmin=0,vmax=1)
-                plt.colorbar(shrink=0.7)
-                plt.title(f'Ground truth depth of defect: {gt_np.max():.2f}')
-
-                plt.subplot(2, 2, 3)
-                plt.imshow(err_np, cmap='seismic', vmin=-v, vmax=v, aspect="auto")
-                plt.colorbar(shrink=0.7)
-                plt.title('Error: pred - GT (fixed scale)')
-
-                plt.subplot(2, 2, 4)
-                # summary text panel (paper-friendly)
-                plt.axis("off")
-
-                # convert normalized errors to mm
-                mae_roi_mm = mae_roi_list[-1] * thickness if not np.isnan(mae_roi_list[-1]) else np.nan
-                medae_roi_mm = medae_roi_list[-1] * thickness if not np.isnan(medae_roi_list[-1]) else np.nan
-                rmse_roi_mm = rmse_roi_list[-1] * thickness if not np.isnan(rmse_roi_list[-1]) else np.nan
-                abs_err_defect_mm = abs_err_defect_list[-1] * thickness if not np.isnan(abs_err_defect_list[-1]) else np.nan
-                mae_bg_mm = mae_bg_list[-1] * thickness if not np.isnan(mae_bg_list[-1]) else np.nan
-
-                plt.text(
-                0.02, 0.98,
-                "\n".join([
-                    f"ROI MAE (norm):  {mae_roi_list[-1]:.6f}",
-                    f"ROI MAE (mm):    {mae_roi_mm:.4f}",
-                    f"ROI MedAE (mm):  {medae_roi_mm:.4f}",
-                    f"ROI RMSE (mm):   {rmse_roi_mm:.4f}",
-                    f"Defect |median(pred)-(gt)| (mm): {abs_err_defect_mm:.4f}",
-                    f"BG MAE (mm):     {mae_bg_mm:.4f}",
-                ]),
-                va="top", ha="left", fontsize=12
-                )
-                fig.tight_layout()
-                plt.show()
-                time.sleep(display_time)
-
-            index_for_breaking=index_for_breaking+1
-            if index_for_breaking !=None:
-                pass
-            elif index_for_breaking==break_index:
-                break
-        
-        # -----------------------------
-        # Final dataset-level reporting
-        # -----------------------------
-        def nanmean(x): return float(np.nanmean(np.array(x, dtype=np.float64)))
-        def nanmedian(x): return float(np.nanmedian(np.array(x, dtype=np.float64)))
-
-        # Metrics for over all dataset
-
-        mae_glob_norm = nanmean(mae_glob_list)
-        medae_glob_norm = nanmedian(medae_glob_list)
-        rmse_glob_norm = nanmean(rmse_glob_list)
-
-        mae_roi_norm = nanmean(mae_roi_list)
-        medae_roi_norm = nanmedian(medae_roi_list)
-        rmse_roi_norm = nanmean(rmse_roi_list)
-        mae_bg_norm = nanmean(mae_bg_list)
-        abs_err_defect_norm = nanmean(abs_err_defect_list)
-        abs_err_defect_mean_norm = nanmean(abs_err_defect_list_mean)
-        abs_err_defect_25_norm = nanmean(abs_err_defect_list_25)
-        abs_err_defect_75_norm = nanmean(abs_err_defect_list_75)
-
-        print("\n=== PAPER METRICS Global (normalized 0..1) ===")
-        print(f"ROI MAE (mean):          {mae_glob_norm:.6f}")
-        print(f"ROI MedAE (median):      {medae_glob_norm:.6f}")
-        print(f"ROI RMSE (mean):         {rmse_glob_norm:.6f}")
-
-        print("\n=== PAPER METRICS ROI (normalized 0..1) ===")
-        print(f"ROI MAE (mean):          {mae_roi_norm:.6f}")
-        print(f"ROI MedAE (median):      {medae_roi_norm:.6f}")
-        print(f"ROI RMSE (mean):         {rmse_roi_norm:.6f}")
-        print(f"BG MAE (mean):           {mae_bg_norm:.6f}")
-
-        print("\n=== Depth prediction over ROI (mm), thickness ===")
-        print(f"Defect abs err (median): {abs_err_defect_norm:.6f}")
-        print(f"Defect abs err (median): {abs_err_defect_norm * thickness:.4f} mm")
-        print(f"Defect abs err (mean): {abs_err_defect_mean_norm * thickness:.4f} mm")
-        print(f"Defect abs err (q25): {abs_err_defect_25_norm * thickness:.4f} mm")
-        print(f"Defect abs err (q75): {abs_err_defect_75_norm * thickness:.4f} mm")
-
-       
+        if level_err.numel() > 0:
+            print(
+                f"Depth={level:.3f} | "
+                f"Mean signed={level_err.mean().item():.6f} | "
+                f"Median signed={level_err.median().item():.6f} | "
+                f"Mean abs={level_abs.mean().item():.6f} | "
+                f"Count={level_err.numel()}"
+            )
+        else:
+            print(f"Depth={level:.3f} | No samples")

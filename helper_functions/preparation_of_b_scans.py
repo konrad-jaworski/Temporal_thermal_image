@@ -4,6 +4,7 @@ import glob
 
 def extract_rowwise_bscan_and_targets(
     input_folder,
+    output_bscan_folder,
     output_depth_folder,
     lower_bound,
     upper_bound
@@ -18,6 +19,7 @@ def extract_rowwise_bscan_and_targets(
 
     # Creation of the specific folders
     os.makedirs(output_depth_folder, exist_ok=True)
+    os.makedirs(output_bscan_folder, exist_ok=True)
 
     # Checking if folder contain npz file
     files = glob.glob(os.path.join(input_folder, "*.npz"))
@@ -55,6 +57,7 @@ def extract_rowwise_bscan_and_targets(
             # unique filename per row
             fname = f"{base_name}_row_{i:04d}"
 
+            np.save(os.path.join(output_bscan_folder, fname + ".npy"), X)
             np.save(os.path.join(output_depth_folder, fname + ".npy"), depth_target)
 
             sample_counter += 1
@@ -62,14 +65,16 @@ def extract_rowwise_bscan_and_targets(
     print(f"Done. Saved {sample_counter} row-wise samples.")
 
 
-input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/testing_rb"
-output_depth_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/testing_bscan"
+input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb"
+output_bscan_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_bscan"
+output_depth_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_mask"
 
 lower_bound = 0
 upper_bound = 512
 
 extract_rowwise_bscan_and_targets(
     input_folder,
+    output_bscan_folder,
     output_depth_folder,
     lower_bound,
     upper_bound
