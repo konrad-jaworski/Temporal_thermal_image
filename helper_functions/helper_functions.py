@@ -208,6 +208,7 @@ def visualize_bscan_prediction(pred_all,mask_all,n,level):
     """
     Function which visualize prediction over single B-scan at the same time presenting the depth seen by the network
     """
+    n=n-1
     plt.plot(pred_all[level+512*n,:])
     plt.plot(mask_all[level+512*n,:])
     plt.grid(alpha=0.3)

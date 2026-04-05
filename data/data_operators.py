@@ -25,6 +25,7 @@ class BScanDepthDataset(Dataset):
         derivative_mode=None,  # None, 'mixed','time','space'
         cooling_phase=True,
         cooling_frame=254, # obtained from metadata
+        log_scaling=True
     ):
         self.bscan_dir = bscan_dir
         self.depth_dir = depth_dir
@@ -34,6 +35,7 @@ class BScanDepthDataset(Dataset):
         self.derivative_mode = derivative_mode
         self.cooling_phase = cooling_phase
         self.cooling_frame = cooling_frame
+        self.log_scaling = log_scaling
 
         config = np.load(self.path, allow_pickle=True)
         self.scale = config["scale"]
@@ -75,7 +77,9 @@ class BScanDepthDataset(Dataset):
             bscan, depth = self.transform(bscan, depth)
 
         # Base preprocessing with log1p scaling and normalization
-        bscan = torch.log1p(bscan) # this is the point of confusion
+        if self.log_scaling:
+            bscan = torch.log1p(bscan) 
+
         bscan = bscan / self.scale
 
         # --------------------------------------------------
