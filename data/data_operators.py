@@ -112,6 +112,11 @@ class BScanDepthDataset(Dataset):
             d1=bscan
             d2= torch.angle(phase_channel)/torch.pi
 
+        elif self.derivative_mode=='phase_cos':
+            phase_channel=torch.fft.fft(bscan,dim=0)
+            d1=bscan
+            d2= torch.cos(torch.angle(phase_channel)/torch.pi)
+
         else:
             raise NotImplementedError(
                 f"derivative_mode='{self.derivative_mode}' not implemented yet. "
