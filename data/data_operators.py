@@ -22,7 +22,7 @@ class BScanDepthDataset(Dataset):
         transform=None,
         dtype=torch.float32,
         normalization_path=None,
-        derivative_mode=None,  # None, 'mixed','time','space'
+        derivative_mode=None,  # None, 'mixed','time','space','phase'
         cooling_phase=True,
         cooling_frame=254, # obtained from metadata
         log_scaling=True
@@ -106,6 +106,11 @@ class BScanDepthDataset(Dataset):
         elif self.derivative_mode=="space":
             d1=d1_dx(bscan)/self.scale_d_dx
             d2=d2_dx2(bscan)/self.scale_d2_dx2
+
+        elif self.derivative_mode=='phase':
+            phase_channel=torch.fft.fft(bscan,dim=0)
+            d1=bscan
+            d2= torch.angle(phase_channel)/torch.pi
 
         else:
             raise NotImplementedError(

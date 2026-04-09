@@ -102,7 +102,7 @@ train_dataset = BScanDepthDataset(
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_mask",
     transform=train_transforms,
     normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params.npz",
-    derivative_mode='time',
+    derivative_mode='phase',
     log_scaling=True
 )
 
@@ -111,7 +111,7 @@ val_dataset_clean = BScanDepthDataset(
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_mask",
     transform=None,
     normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params.npz",
-    derivative_mode='time',
+    derivative_mode='phase',
     log_scaling=True
 )
 
@@ -191,7 +191,7 @@ def u_to_depth(u):
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs_official"
-model_name = "smart_net_refine_time_derivatives_2"
+model_name = "smart_net_refine_phase_channel"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -312,9 +312,9 @@ run_config = {
     "num_workers": 24,
     "lr": 1e-4,
     "loss": "MSE",
-    "channels": "derivatives",
-    "derivative_mode": "time",
-    "Model":"Smartnet refine with time derivatives",
+    "channels": "phase",
+    "derivative_mode": "phase last channel",
+    "Model":"Smartnet refine with phase",
     "patience": patience
 }
 torch.save(run_config, os.path.join(model_dir, "run_config.pt"))
