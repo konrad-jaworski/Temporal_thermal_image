@@ -44,7 +44,7 @@ def extract_rowwise_bscan_and_targets(
         meta = npz['meta']
 
         # Creating depth factor which is inverted due to the naming convection describing amount of material removed.
-        depth_factor = (100.0 - float(meta[40][1])) / 100.0
+        # depth_factor = (100.0 - float(meta[40][1])) / 100.0
 
         for i in range(lower_bound, upper_bound):
 
@@ -65,12 +65,12 @@ def extract_rowwise_bscan_and_targets(
     print(f"Done. Saved {sample_counter} row-wise samples.")
 
 
-input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation"
-output_bscan_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_bscan_full"
-output_depth_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_mask_full"
+input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/topology_exp/topology_exp_rb"
+output_bscan_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/topology_exp/topology_exp_bscans"
+output_depth_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/topology_exp/topology_exp_masks"
 
 lower_bound = 0
-upper_bound = 512
+upper_bound = 480
 
 extract_rowwise_bscan_and_targets(
     input_folder,

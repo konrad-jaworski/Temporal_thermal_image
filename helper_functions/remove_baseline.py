@@ -49,8 +49,8 @@ def preprocess_deltaT(
     
     print(f"Preprocessing done. Files saved to {output_folder}")
 
-input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/testing"
-output_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/testing_rb"
+input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/topology_exp"
+output_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/topology_exp/topology_exp_rb"
 baseline_frames = 1  # you can change this depending on how many initial frames you want to consider as baseline
 
 preprocess_deltaT(input_folder, output_folder, baseline_frames)
