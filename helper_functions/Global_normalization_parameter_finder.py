@@ -6,7 +6,7 @@ from helper_functions import d1_dy, d2_dx2, d1_dx, d2_dy2
 
 train_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training/*.npz" # Depennding whther we train on heating or not _rb (removed baseline)
 files = sorted(glob.glob(train_folder))
-log_scaling = False  # Set to True if you want to compute scales based on log-transformed data, False for raw data
+log_scaling = True  # Set to True if you want to compute scales based on log-transformed data, False for raw data
 
 print(f"Found {len(files)} training cubes")
 

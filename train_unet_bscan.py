@@ -102,8 +102,9 @@ train_dataset = BScanDepthDataset(
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_mask",
     transform=train_transforms,
     normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params.npz",
-    derivative_mode='phase_cos',
-    log_scaling=True
+    derivative_mode=None,
+    log_scaling=True,
+    cooling_phase=False
 )
 
 val_dataset_clean = BScanDepthDataset(
@@ -111,8 +112,9 @@ val_dataset_clean = BScanDepthDataset(
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_mask",
     transform=None,
     normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params.npz",
-    derivative_mode='phase_cos',
-    log_scaling=True
+    derivative_mode=None,
+    log_scaling=True,
+    cooling_phase=False
 )
 
 
@@ -143,7 +145,6 @@ val_loader_clean = DataLoader(
     generator=g,
     persistent_workers=True if 24 > 0 else False
 )
-
 
 # -------------------------
 # Model / loss / optimizer
@@ -191,7 +192,7 @@ def u_to_depth(u):
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs_official"
-model_name = "smart_net_refine_phase_cos_channel"
+model_name = "smart_net_heating_and_cooling"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -312,9 +313,9 @@ run_config = {
     "num_workers": 24,
     "lr": 1e-4,
     "loss": "MSE",
-    "channels": "phase_cos",
-    "derivative_mode": "phase_cos last channel",
-    "Model":"Smartnet refine with phase_cos",
+    "channels": "Repeated",
+    "derivative_mode": "None",
+    "Model":"Smartnet refine with cooling and heating phase",
     "patience": patience
 }
 torch.save(run_config, os.path.join(model_dir, "run_config.pt"))

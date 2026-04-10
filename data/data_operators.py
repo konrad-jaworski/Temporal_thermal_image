@@ -71,8 +71,6 @@ class BScanDepthDataset(Dataset):
 
         if self.cooling_phase:
             bscan=bscan[self.cooling_frame:,:]
-        elif self.cooling_phase==False:
-            pass
         
         # Augmentation on base channel only, before derivatives and this mimics the outputs from the real data better if we augment before scaling
         if self.transform is not None:
