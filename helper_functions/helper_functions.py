@@ -531,64 +531,16 @@ def print_iou_results(results):
             f"Union={union}"
         )
 
-def network_eval_run(model, loader, non_linear_pred=False, device='cuda'):
-    """
-    Simple eval loop for prediction gathering.
-
-    Returns
-    -------
-    pred_all : torch.Tensor
-        Concatenated predictions
-    mask_all : torch.Tensor
-        Concatenated ground truth
-    err_all : torch.Tensor
-        Signed error = pred - gt
-    abs_err_all : torch.Tensor
-        Absolute error = |pred - gt|
-    """
-    model.eval()
-
-    pred_all = []
-    mask_all = []
-    err_all = []
-    abs_err_all = []
-
-    with torch.no_grad():
-        for X, mask in tqdm(loader):
-            X = X.to(device)
-            mask = mask.to(device)
-
-            pred = model(X)
-
-            if non_linear_pred:
-                pred = pred.clamp(0, 1)
-                pred = pred ** 2
-                pred = pred.clamp(0, 1)
-
-            err = pred - mask
-            abs_err = err.abs()
-
-            pred_all.append(pred.cpu())
-            mask_all.append(mask.cpu())
-            err_all.append(err.cpu())
-            abs_err_all.append(abs_err.cpu())
-
-    pred_all = torch.cat(pred_all, dim=0)
-    mask_all = torch.cat(mask_all, dim=0)
-    err_all = torch.cat(err_all, dim=0)
-    abs_err_all = torch.cat(abs_err_all, dim=0)
-
-    return pred_all, mask_all, err_all, abs_err_all
 
 def plot_error_histograms_with_levels(
     pred_all,
     gt_all,
     depth_levels,
-    bins=80,
+    bins=100,
     tol=1e-6,
     roi_only=True,
-    plot_absolute=True,
-    max_cols=3,
+    plot_absolute=False,
+    max_cols=4,
     figsize_per_plot=(5, 4),
 ):
     """
@@ -642,11 +594,14 @@ def plot_error_histograms_with_levels(
     # -------------------------
     plt.figure(figsize=(7, 5))
     plt.hist(global_err, bins=bins)
-    plt.axvline(0.0, linestyle='--')
-    plt.axvline(global_err.mean(), linestyle='-')
+    plt.axvline(0.0, linestyle='--',color='black',label='Zero error')
+    plt.axvline(global_err.mean(), linestyle='-',color='red',label='Mean error')
+    plt.axvline(np.median(global_err), linestyle='-',color='orange',label='Median error')
     plt.title(f"Global signed error histogram ({global_title_suffix})")
     plt.xlabel("Signed error = pred - gt")
     plt.ylabel("Count")
+    plt.legend()
+    plt.grid(alpha=0.3)
     plt.show()
 
     # -------------------------
@@ -658,6 +613,7 @@ def plot_error_histograms_with_levels(
         plt.title(f"Global absolute error histogram ({global_title_suffix})")
         plt.xlabel("Absolute error = |pred - gt|")
         plt.ylabel("Count")
+        plt.grid(alpha=0.3)
         plt.show()
 
     # -------------------------
@@ -681,12 +637,18 @@ def plot_error_histograms_with_levels(
         level_err = err_all[level_mask].cpu().numpy()
 
         if len(level_err) > 0:
-            ax.hist(level_err, bins=bins)
-            ax.axvline(0.0, linestyle='--')
-            ax.axvline(level_err.mean(), linestyle='-')
+            ax.hist(level_err, bins=bins, log=False)
+
+            ax.axvline(0.0, linestyle='--', color='black', label='Zero error')
+            ax.axvline(level_err.mean(), linestyle='-', color='red', label='Mean error')
+            ax.axvline(np.median(level_err), linestyle='-', color='orange', label='Median error')
+
             ax.set_title(f"Depth={level:.3f}\nN={len(level_err)}")
             ax.set_xlabel("pred - gt")
             ax.set_ylabel("Count")
+
+            ax.grid(True, linestyle='--', alpha=0.5)
+            ax.legend()
         else:
             ax.set_title(f"Depth={level:.3f}\nNo samples")
             ax.axis("off")

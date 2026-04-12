@@ -7,7 +7,8 @@ def extract_rowwise_bscan_and_targets(
     output_bscan_folder,
     output_depth_folder,
     lower_bound,
-    upper_bound
+    upper_bound,
+    trim_width=None
 ):
     """
     Extract row-wise B-scan data and corresponding targets from .npz files.
@@ -39,13 +40,14 @@ def extract_rowwise_bscan_and_targets(
             print(f"Skipping {base_name}: missing required keys")
             continue
 
-        data = npz['data']      # [T, H, W]
-        mask = npz['mask']      # [H]
-        meta = npz['meta']
-
-        # Creating depth factor which is inverted due to the naming convection describing amount of material removed.
-        # depth_factor = (100.0 - float(meta[40][1])) / 100.0
-
+        
+        if trim_width is not None:
+            data=npz['data'][:, :, trim_width:-trim_width]  # Trim width if specified
+            mask=npz['mask'][:,trim_width:-trim_width]  # Mask width is also trimmed accordingly
+        else:
+            data = npz['data']      # [T, H, W]
+            mask = npz['mask']      # [H]
+        
         for i in range(lower_bound, upper_bound):
 
             # --- Input (B-scan row) ---
@@ -77,5 +79,6 @@ extract_rowwise_bscan_and_targets(
     output_bscan_folder,
     output_depth_folder,
     lower_bound,
-    upper_bound
+    upper_bound,
+    trim_width=64
 )
