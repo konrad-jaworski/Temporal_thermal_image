@@ -101,9 +101,9 @@ train_dataset = BScanDepthDataset(
     bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_bscan",
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_mask",
     transform=train_transforms,
-    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params.npz",
+    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params_no_log.npz",
     derivative_mode=None,
-    log_scaling=True,
+    log_scaling=False,
     cooling_phase=False
 )
 
@@ -111,9 +111,9 @@ val_dataset_clean = BScanDepthDataset(
     bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_bscan",
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_mask",
     transform=None,
-    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params.npz",
+    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params_no_log.npz",
     derivative_mode=None,
-    log_scaling=True,
+    log_scaling=False,
     cooling_phase=False
 )
 
@@ -176,23 +176,10 @@ optimizer = optim.Adam(model.parameters(), lr=1e-4)
 GRAD_CLIP_NORM = 1.0  # set e.g. 1.0 if needed
 
 # -------------------------
-# Stage 2: non-linear prediction
-non_linear_pred=False
-EPS = 1e-6
-
-def depth_to_u(depth):
-    return torch.sqrt(depth.clamp_min(0.0) + EPS)
-
-def u_to_depth(u):
-    return (u.clamp(0.0, 1.0) ** 2)
-# -------------------------
-
-
-# -------------------------
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs_official"
-model_name = "smart_net_heating_and_cooling"
+model_name = "smart_net_heating_and_cooling_without_log_scaling"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -217,7 +204,7 @@ val_clean_log = []
 # -------------------------
 # Eval helper
 # -------------------------
-def evaluate(loader,non_linear_pred=non_linear_pred):
+def evaluate(loader):
     model.eval()
     total = 0.0
     n = 0
@@ -226,14 +213,8 @@ def evaluate(loader,non_linear_pred=non_linear_pred):
             bscan = bscan.to(device, non_blocking=True)
             depth = depth.to(device, non_blocking=True)
 
-            
-            if non_linear_pred==False:
-                output = model(bscan)
-                loss = criterion(output, depth)
-            else:
-                output_u = model(bscan)                  # predicts u in [0,1]
-                target_u = depth_to_u(depth)             # sqrt(depth)
-                loss = criterion(output_u, target_u)
+            output = model(bscan)
+            loss = criterion(output, depth)
 
             bs = bscan.size(0)
             total += loss.item() * bs
@@ -254,14 +235,9 @@ for epoch in tqdm(range(num_epochs), desc="Epochs", leave=False):
 
         optimizer.zero_grad(set_to_none=True)
         
-        if non_linear_pred==False:
-            output = model(bscan)
-            loss = criterion(output, depth)
-        else:
-            output_u = model(bscan)                  # predicts u in [0,1]
-            target_u = depth_to_u(depth)             # sqrt(depth)
-            loss = criterion(output_u, target_u)
-
+        output = model(bscan)
+        loss = criterion(output, depth)
+        
         loss.backward()
 
         if GRAD_CLIP_NORM is not None:
@@ -274,7 +250,7 @@ for epoch in tqdm(range(num_epochs), desc="Epochs", leave=False):
     train_log.append(train_epoch_loss)
 
     # ---- Validation pass ----
-    clean_loss = evaluate(val_loader_clean,non_linear_pred)
+    clean_loss = evaluate(val_loader_clean)
     val_clean_log.append(clean_loss)
 
     print(
@@ -315,7 +291,7 @@ run_config = {
     "loss": "MSE",
     "channels": "Repeated",
     "derivative_mode": "None",
-    "Model":"Smartnet refine with cooling and heating phase",
+    "Model":"Smartnet refine with cooling and heating phase without log scaling",
     "patience": patience
 }
 torch.save(run_config, os.path.join(model_dir, "run_config.pt"))
