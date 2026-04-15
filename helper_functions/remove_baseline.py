@@ -5,7 +5,8 @@ import glob
 def preprocess_deltaT(
     input_folder, 
     output_folder, 
-    baseline_frames=4
+    baseline_frames=4,
+    convert_to_C=False
 ):
     """
     Preprocess all .npz files: compute baseline from first `baseline_frames` frames,
@@ -30,6 +31,10 @@ def preprocess_deltaT(
             continue
 
         data_tr = data_npz['data']  # [T,H,W] shape
+
+        if convert_to_C:
+            data_tr = data_tr / 100 - 273.15  # convert from centi-Kelvin to Celsius
+
         if baseline_frames > data_tr.shape[0]:
             raise ValueError(f"{fname}: baseline_frames={baseline_frames} > sequence length={data_tr.shape[0]}")
 
@@ -49,8 +54,8 @@ def preprocess_deltaT(
     
     print(f"Preprocessing done. Files saved to {output_folder}")
 
-input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/topology_exp"
-output_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/topology_exp/topology_exp_rb"
-baseline_frames = 1  # you can change this depending on how many initial frames you want to consider as baseline
+input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/Experimental_sample"
+output_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/Experimental_sample/exp_rb"
+baseline_frames = 4  # you can change this depending on how many initial frames you want to consider as baseline
 
-preprocess_deltaT(input_folder, output_folder, baseline_frames)
+preprocess_deltaT(input_folder, output_folder, baseline_frames, convert_to_C=True)

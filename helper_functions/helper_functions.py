@@ -721,3 +721,36 @@ def plot_error_histograms_with_levels(
             )
         else:
             print(f"Depth={level:.3f} | No samples")
+
+def tomografic_reconstruction(pred_all,step=1,elev=35,azim=-135):
+    Z = torch.as_tensor(pred_all).detach().cpu().numpy()
+
+    # optional downsampling for speed / cleaner view
+    step = 1
+    Z = Z[::step, ::step]
+
+    H, W = Z.shape
+    X, Y = np.meshgrid(np.arange(W), np.arange(H))
+
+    fig = plt.figure(figsize=(12, 8))
+    ax = fig.add_subplot(111, projection='3d')
+
+    surf = ax.plot_surface(
+        X, Y, Z,
+        cmap='viridis',
+        linewidth=0,
+        antialiased=True
+    )
+
+    fig.colorbar(surf, ax=ax, shrink=0.75, pad=0.08, label='Predicted value')
+
+    ax.set_title("3D surface of predicted depth field")
+    ax.set_xlabel("Width")
+    ax.set_ylabel("Height")
+    ax.set_zlabel("Value")
+
+    # nice viewing angle
+    ax.view_init(elev=elev, azim=azim)
+
+    plt.tight_layout()
+    plt.show()
