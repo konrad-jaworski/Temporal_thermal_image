@@ -101,9 +101,9 @@ train_dataset = BScanDepthDataset(
     bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_bscan",
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_mask",
     transform=train_transforms,
-    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params_no_log.npz",
+    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params.npz",
     derivative_mode=None,
-    log_scaling=False,
+    log_scaling=True,
     cooling_phase=False
 )
 
@@ -111,9 +111,9 @@ val_dataset_clean = BScanDepthDataset(
     bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_bscan",
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_mask",
     transform=None,
-    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params_no_log.npz",
+    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params.npz",
     derivative_mode=None,
-    log_scaling=False,
+    log_scaling=True,
     cooling_phase=False
 )
 
@@ -150,8 +150,8 @@ val_loader_clean = DataLoader(
 # Model / loss / optimizer
 # -------------------------
 
-model = BnetSmallKernelSmarterRefine().to(device)
-# model = BnetMean().to(device)
+# model = BnetSmallKernelSmarterRefine().to(device)
+model = BnetMean().to(device)
 
 # NEW LOSS (Stage 1 ablation)
 # criterion = WeightedSmoothL1Sparse(
@@ -179,7 +179,7 @@ GRAD_CLIP_NORM = 1.0  # set e.g. 1.0 if needed
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs_official"
-model_name = "smart_net_heating_and_cooling_without_log_scaling"
+model_name = "MeanNet_heating_and_cooling"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -291,7 +291,7 @@ run_config = {
     "loss": "MSE",
     "channels": "Repeated",
     "derivative_mode": "None",
-    "Model":"Smartnet refine with cooling and heating phase without log scaling",
+    "Model":"Mean net with heating and cooling",
     "patience": patience
 }
 torch.save(run_config, os.path.join(model_dir, "run_config.pt"))
