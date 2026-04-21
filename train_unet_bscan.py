@@ -63,7 +63,7 @@ train_dataset = BScanDepthDataset(
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_mask",
     transform=train_transforms,
     normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params.npz",
-    derivative_mode='phase',
+    derivative_mode='phase_cos',
     log_scaling=True,
     cooling_phase=False
 )
@@ -73,7 +73,7 @@ val_dataset_clean = BScanDepthDataset(
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_mask",
     transform=None,
     normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params.npz",
-    derivative_mode='phase',
+    derivative_mode='phase_cos',
     log_scaling=True,
     cooling_phase=False
 )
@@ -125,7 +125,7 @@ GRAD_CLIP_NORM = 1.0  # set e.g. 1.0 if needed
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs_official"
-model_name = "SmartNet_heating_and_cooling_phase"
+model_name = "SmartNet_heating_and_cooling_phase_cos"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -235,7 +235,7 @@ run_config = {
     "num_workers": 24,
     "lr": 1e-4,
     "loss": "MSE",
-    "channels": "Phase",
+    "channels": "Phase_cos",
     "derivative_mode": "None",
     "Model":"Smart Net with heating and cooling and phase channel",
     "patience": patience
