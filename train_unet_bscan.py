@@ -37,52 +37,13 @@ def seed_worker(worker_id: int):
     np.random.seed(worker_seed)
     random.seed(worker_seed)
 
+# The steup of experiment
 SEED = 123
 seed_everything(SEED, deterministic=False)
 
-
+# The device setup
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 pin_memory = (device.type == "cuda")
-
-
-# -------------------------
-# Loss: ROI-weighted, count-normalized SmoothL1 for sparse masks
-# -------------------------
-class WeightedSmoothL1Sparse(nn.Module):
-    """
-    For sparse targets where gt==0 for background and gt>0 inside defect ROI.
-    Computes loss separately on ROI and background, normalizes by element counts,
-    and weights ROI higher.
-    """
-    def __init__(self, w_roi: float = 10.0, w_bg: float = 1.0, beta: float = 0.05, roi_threshold: float = 0.0):
-        super().__init__()
-        self.w_roi = w_roi
-        self.w_bg = w_bg
-        self.beta = beta
-        self.roi_threshold = roi_threshold
-
-    def forward(self, pred: torch.Tensor, gt: torch.Tensor) -> torch.Tensor:
-        """
-        pred, gt: [B, W]
-        """
-        eps = 1e-6
-        roi = (gt > self.roi_threshold).float()
-        bg  = 1.0 - roi
-
-        # SmoothL1 per-element (Huber)
-        # reduction='none' to do our own count-normalization
-        per_elem = F.smooth_l1_loss(pred, gt, reduction="none", beta=self.beta)
-
-        roi_sum = (per_elem * roi).sum()
-        bg_sum  = (per_elem * bg).sum()
-
-        roi_cnt = roi.sum()
-        bg_cnt  = bg.sum()
-
-        loss_roi = roi_sum / (roi_cnt + eps)
-        loss_bg  = bg_sum  / (bg_cnt + eps)
-
-        return self.w_roi * loss_roi + self.w_bg * loss_bg
 
 
 # -------------------------
@@ -102,7 +63,7 @@ train_dataset = BScanDepthDataset(
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_mask",
     transform=train_transforms,
     normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params.npz",
-    derivative_mode=None,
+    derivative_mode='phase',
     log_scaling=True,
     cooling_phase=False
 )
@@ -112,11 +73,10 @@ val_dataset_clean = BScanDepthDataset(
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_mask",
     transform=None,
     normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params.npz",
-    derivative_mode=None,
+    derivative_mode='phase',
     log_scaling=True,
     cooling_phase=False
 )
-
 
 # -------------------------
 # Loaders
@@ -150,27 +110,13 @@ val_loader_clean = DataLoader(
 # Model / loss / optimizer
 # -------------------------
 
-# model = BnetSmallKernelSmarterRefine().to(device)
-model = BnetMean().to(device)
-
-# NEW LOSS (Stage 1 ablation)
-# criterion = WeightedSmoothL1Sparse(
-#     w_roi=10.0,   # start here; try 5.0 if BG starts drifting
-#     w_bg=1.0,
-#     beta=0.05,    # Huber transition; ~0.02–0.1 reasonable on [0,1] targets
-#     roi_threshold=0.0
-# )
+model = BnetSmallKernelSmarterRefine().to(device)
+# model = BnetMean().to(device)
 
 # MSE loss (Stage 1 baseline)
 criterion = nn.MSELoss()
 
 optimizer = optim.Adam(model.parameters(), lr=1e-4) 
-
-# optimizer = optim.Adam([
-#     {"params": model.unet.parameters(), "lr": 1e-4},
-#     {"params": model.vertical_proj.parameters(), "lr": 1e-3},
-#     {"params": model.regressor_smarter.parameters(), "lr": 1e-3}
-# ])
 
 # Optional: stable training if you see spikes
 GRAD_CLIP_NORM = 1.0  # set e.g. 1.0 if needed
@@ -179,7 +125,7 @@ GRAD_CLIP_NORM = 1.0  # set e.g. 1.0 if needed
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs_official"
-model_name = "MeanNet_heating_and_cooling"
+model_name = "SmartNet_heating_and_cooling_phase"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -289,9 +235,9 @@ run_config = {
     "num_workers": 24,
     "lr": 1e-4,
     "loss": "MSE",
-    "channels": "Repeated",
+    "channels": "Phase",
     "derivative_mode": "None",
-    "Model":"Mean net with heating and cooling",
+    "Model":"Smart Net with heating and cooling and phase channel",
     "patience": patience
 }
 torch.save(run_config, os.path.join(model_dir, "run_config.pt"))
