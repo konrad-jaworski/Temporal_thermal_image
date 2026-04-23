@@ -4,11 +4,20 @@ import torch
 from tqdm import tqdm
 from helper_functions import d1_dy, d2_dx2, d1_dx, d2_dy2
 
-train_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training/*.npz" # Depennding whther we train on heating or not _rb (removed baseline)
+train_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb/*.npz"  # We work on removed baseline _rb
 files = sorted(glob.glob(train_folder))
-log_scaling = True  # Set to True if you want to compute scales based on log-transformed data, False for raw data
+log_scaling = True  # True -> compute scales on log-transformed data, False -> raw data
+
+# =========================================================
+# Sequence selection
+# =========================================================
+use_cooling_only = True     # True -> use only cooling part, False -> use full sequence
+cooling_frame = 254         # First frame of cooling phase
 
 print(f"Found {len(files)} training cubes")
+print(f"Mode: {'cooling only' if use_cooling_only else 'full sequence'}")
+if use_cooling_only:
+    print(f"Cooling starts from frame: {cooling_frame}")
 
 
 # =========================================================
@@ -20,6 +29,15 @@ def percentile_from_hist(hist, bin_edges, q):
     idx = np.searchsorted(cdf, target)
     idx = min(idx, len(bin_edges) - 2)
     return bin_edges[idx]
+
+
+# =========================================================
+# Helper: sequence selection
+# =========================================================
+def select_sequence(d, use_cooling_only=False, cooling_frame=254):
+    if use_cooling_only:
+        d = d[cooling_frame:, :, :]
+    return d
 
 
 # =========================================================
@@ -39,6 +57,7 @@ temp_max = 0.0
 
 for f in tqdm(files, desc="Pass 1a/3: estimate temp max"):
     d = np.load(f)["data"]
+    d = select_sequence(d, use_cooling_only=use_cooling_only, cooling_frame=cooling_frame)
     d = transform_data(d, log_scaling=log_scaling)
     temp_max = max(temp_max, float(d.max()))
 
@@ -48,6 +67,7 @@ temp_hist = np.zeros(n_bins_temp, dtype=np.int64)
 
 for f in tqdm(files, desc="Pass 1b/3: histogram temperature"):
     d = np.load(f)["data"]
+    d = select_sequence(d, use_cooling_only=use_cooling_only, cooling_frame=cooling_frame)
     d = transform_data(d, log_scaling=log_scaling)
 
     h, _ = np.histogram(d, bins=temp_edges)
@@ -67,6 +87,7 @@ dx_max = 0.0
 
 for f in tqdm(files, desc="Pass 2/3: estimate derivative maxima"):
     d = np.load(f)["data"]
+    d = select_sequence(d, use_cooling_only=use_cooling_only, cooling_frame=cooling_frame)
     d = transform_data(d, log_scaling=log_scaling)
 
     X = d / scale_temp
@@ -116,6 +137,7 @@ dx_hist = np.zeros(n_bins_dx, dtype=np.int64)
 
 for f in tqdm(files, desc="Pass 3/3: histogram derivatives"):
     d = np.load(f)["data"]
+    d = select_sequence(d, use_cooling_only=use_cooling_only, cooling_frame=cooling_frame)
     d = transform_data(d, log_scaling=log_scaling)
 
     X = d / scale_temp
@@ -154,13 +176,15 @@ print("Computed dT/dx scale:", scale_dx)
 # SAVE
 # =========================================================
 np.savez(
-    r"normalization_params_full_length.npz",
+    r"normalization_params_cooling_only.npz",
     scale=scale_temp,
     scale_dt=scale_dt,
     scale_dxx=scale_dxx,
     scale_dx=scale_dx,
     scale_dtt=scale_dtt,
-    log_scaling=log_scaling
+    log_scaling=log_scaling,
+    use_cooling_only=use_cooling_only,
+    cooling_frame=cooling_frame
 )
 
-print("\nSaved normalization parameters to normalization_params.npz")
+print("\nSaved normalization parameters.")
