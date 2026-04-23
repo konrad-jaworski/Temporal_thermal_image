@@ -110,8 +110,8 @@ val_loader_clean = DataLoader(
 # Model / loss / optimizer
 # -------------------------
 
-# model = BnetSmallKernelSmarterRefine().to(device)
-model = BnetMean().to(device)
+model = BnetSmallKernelSmarterRefine().to(device)
+# model = BnetMean().to(device)
 
 # MSE loss (Stage 1 baseline)
 criterion = nn.MSELoss()
@@ -125,7 +125,7 @@ GRAD_CLIP_NORM = 1.0  # set e.g. 1.0 if needed
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs_official"
-model_name = "mean_net_heating_and_cooling_time_derivative"
+model_name = "smart_net_heating_and_cooling_time_derivative"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -237,7 +237,7 @@ run_config = {
     "loss": "MSE",
     "channels": "Time derivative",
     "derivative_mode": "Time",
-    "Model":"mean Net with heating and cooling and time derivatives",
+    "Model":"smart Net with heating and cooling and space derivatives",
     "patience": patience
 }
 torch.save(run_config, os.path.join(model_dir, "run_config.pt"))
