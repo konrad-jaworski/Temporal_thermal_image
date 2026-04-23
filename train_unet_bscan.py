@@ -62,20 +62,20 @@ train_dataset = BScanDepthDataset(
     bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_bscan",
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_mask",
     transform=train_transforms,
-    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params.npz",
-    derivative_mode='space',
-    log_scaling=True,
-    cooling_phase=True
+    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params_no_log.npz",
+    derivative_mode=None,
+    log_scaling=False,
+    cooling_phase=False
 )
 
 val_dataset_clean = BScanDepthDataset(
     bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_bscan",
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_mask",
     transform=None,
-    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params.npz",
-    derivative_mode='space',
-    log_scaling=True,
-    cooling_phase=True
+    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params_no_log.npz",
+    derivative_mode=None,
+    log_scaling=False,
+    cooling_phase=False
 )
 
 # -------------------------
@@ -125,7 +125,7 @@ GRAD_CLIP_NORM = 1.0  # set e.g. 1.0 if needed
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs_official"
-model_name = "mean_net_space_derivative"
+model_name = "mean_net_heating_and_cooling_no_log"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -235,9 +235,9 @@ run_config = {
     "num_workers": 24,
     "lr": 1e-4,
     "loss": "MSE",
-    "channels": "space",
+    "channels": "Repeated",
     "derivative_mode": "None",
-    "Model":"mean Net with cooling and time derivative",
+    "Model":"mean Net with heating andcooling and no log scaling",
     "patience": patience
 }
 torch.save(run_config, os.path.join(model_dir, "run_config.pt"))
