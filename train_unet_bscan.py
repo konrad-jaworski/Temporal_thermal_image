@@ -62,9 +62,9 @@ train_dataset = BScanDepthDataset(
     bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_bscan",
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_mask",
     transform=train_transforms,
-    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params.npz",
-    derivative_mode='time',
-    log_scaling=True,
+    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params_no_log.npz",
+    derivative_mode='phase_cos',
+    log_scaling=False,
     cooling_phase=False
 )
 
@@ -72,9 +72,9 @@ val_dataset_clean = BScanDepthDataset(
     bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_bscan",
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_mask",
     transform=None,
-    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params.npz",
-    derivative_mode='time',
-    log_scaling=True,
+    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params_no_log.npz",
+    derivative_mode='phase_cos',
+    log_scaling=False,
     cooling_phase=False
 )
 
@@ -125,7 +125,7 @@ GRAD_CLIP_NORM = 1.0  # set e.g. 1.0 if needed
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs_official"
-model_name = "smart_net_heating_and_cooling_time_derivative"
+model_name = "smartnet_net_heating_and_cooling_phase_cos_derivative_without_log_scaling"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -235,9 +235,9 @@ run_config = {
     "num_workers": 24,
     "lr": 1e-4,
     "loss": "MSE",
-    "channels": "Time derivative",
-    "derivative_mode": "Time",
-    "Model":"smart Net with heating and cooling and space derivatives",
+    "channels": "derivative",
+    "derivative_mode": "phase_cos",
+    "Model":"smart Net heating and cooling phase cos derivatives but no log scaled",
     "patience": patience
 }
 torch.save(run_config, os.path.join(model_dir, "run_config.pt"))

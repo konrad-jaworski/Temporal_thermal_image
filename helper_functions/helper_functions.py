@@ -414,6 +414,239 @@ def print_dataset_depth_metrics(results, thickness_mm=None):
             print(f"RMSE:  {fmt(results['background_mm']['rmse'])} mm")
 
 
+import torch
+
+
+def make_inner_1d_mask(mask, erosion_pixels=3, min_pixels=1):
+    """
+    Shrink each contiguous GT defect region along width direction.
+
+    Parameters
+    ----------
+    mask : torch.Tensor
+        Boolean tensor, shape [N, W].
+
+    erosion_pixels : int
+        Number of pixels removed from left and right edge of each GT segment.
+
+    min_pixels : int
+        Minimum number of pixels required to keep a segment.
+
+    Returns
+    -------
+    inner_mask : torch.Tensor
+        Boolean tensor, shape [N, W].
+    """
+
+    if mask.ndim != 2:
+        raise ValueError(f"Expected [N, W] mask, got {mask.shape}")
+
+    mask = mask.bool()
+    inner_mask = torch.zeros_like(mask)
+
+    N, W = mask.shape
+
+    for i in range(N):
+        row = mask[i]
+
+        if row.sum() == 0:
+            continue
+
+        idx = torch.where(row)[0]
+
+        # Split into contiguous components
+        gaps = torch.where(idx[1:] - idx[:-1] > 1)[0]
+
+        starts = torch.cat([idx[:1], idx[gaps + 1]])
+        ends = torch.cat([idx[gaps], idx[-1:]])
+
+        for start, end in zip(starts, ends):
+            new_start = start + erosion_pixels
+            new_end = end - erosion_pixels
+
+            if new_end >= new_start:
+                if (new_end - new_start + 1) >= min_pixels:
+                    inner_mask[i, new_start:new_end + 1] = True
+
+    return inner_mask
+
+def compute_dataset_depth_metrics_inner_gt(
+    pred_all,
+    gt_all,
+    depth_levels,
+    tol=1e-6,
+    thickness_mm=3.5,
+    include_background=False,
+    erosion_pixels=3,
+    min_pixels=1,
+):
+    """
+    Compute dataset-level pixel-wise metrics using a smaller inner GT mask.
+
+    This keeps the original matrix-subtraction logic:
+
+        error = pred_all - gt_all
+
+    but evaluates ROI metrics only on an eroded/shrunk GT defect region.
+    This removes many edge pixels where shape mismatch dominates the error.
+
+    Parameters
+    ----------
+    pred_all : torch.Tensor
+        Predictions, shape [N, W].
+
+    gt_all : torch.Tensor
+        Ground truth, shape [N, W].
+
+    depth_levels : list
+        Possible depth levels, e.g. [0.25, 0.45, 0.65, 0.85].
+
+    tol : float
+        Float tolerance for matching depth levels.
+
+    thickness_mm : float or None
+        If provided, also report metrics in mm.
+
+    include_background : bool
+        If True, also compute background metrics.
+
+    erosion_pixels : int
+        Number of GT pixels removed from both left and right edge
+        of each defect segment.
+
+    min_pixels : int
+        Minimum number of pixels required to keep an eroded segment.
+
+    Returns
+    -------
+    results : dict
+        Dataset-level global and per-level metrics.
+    """
+
+    pred_all = torch.as_tensor(pred_all).float()
+    gt_all = torch.as_tensor(gt_all).float()
+
+    if pred_all.ndim != 2 or gt_all.ndim != 2:
+        raise ValueError(f"Expected [N, W] tensors, got pred {pred_all.shape}, gt {gt_all.shape}")
+
+    if pred_all.shape != gt_all.shape:
+        raise ValueError(f"Shape mismatch: pred {pred_all.shape}, gt {gt_all.shape}")
+
+    # ------------------------------
+    # Same old matrix subtraction
+    # ------------------------------
+    abs_err = (pred_all - gt_all).abs()
+    sq_err = (pred_all - gt_all) ** 2
+
+    def _safe_mean(x):
+        return x.mean().item() if x.numel() > 0 else float("nan")
+
+    def _safe_median(x):
+        return x.median().item() if x.numel() > 0 else float("nan")
+
+    def _safe_rmse(x):
+        return torch.sqrt(x.mean()).item() if x.numel() > 0 else float("nan")
+
+    # -----------------------------
+    # Smaller / inner GT ROI mask
+    # -----------------------------
+    gt_defect_mask = gt_all > 0
+
+    roi_mask = make_inner_1d_mask(
+        gt_defect_mask,
+        erosion_pixels=erosion_pixels,
+        min_pixels=min_pixels,
+    )
+
+    roi_abs = abs_err[roi_mask]
+    roi_sq = sq_err[roi_mask]
+
+    results = {
+        "global": {
+            "mae": _safe_mean(roi_abs),
+            "medae": _safe_median(roi_abs),
+            "rmse": _safe_rmse(roi_sq),
+            "count": int(roi_mask.sum().item()),
+        },
+        "per_level": {},
+        "dataset": {
+            "num_bscans": int(pred_all.shape[0]),
+            "width": int(pred_all.shape[1]),
+            "num_columns_total": int(pred_all.numel()),
+            "original_roi_count": int(gt_defect_mask.sum().item()),
+            "inner_roi_count": int(roi_mask.sum().item()),
+            "erosion_pixels": int(erosion_pixels),
+        }
+    }
+
+    # -----------------------------
+    # Per-depth-level metrics
+    # -----------------------------
+    for level in depth_levels:
+        level = float(level)
+
+        # Important:
+        # Level mask is also restricted to the smaller inner ROI.
+        level_mask = (torch.abs(gt_all - level) < tol) & roi_mask
+
+        level_abs = abs_err[level_mask]
+        level_sq = sq_err[level_mask]
+
+        results["per_level"][level] = {
+            "mae": _safe_mean(level_abs),
+            "medae": _safe_median(level_abs),
+            "rmse": _safe_rmse(level_sq),
+            "count": int(level_mask.sum().item()),
+        }
+
+    # -----------------------------
+    # Background metrics unchanged
+    # -----------------------------
+    if include_background:
+        bg_mask = torch.abs(gt_all) < tol
+        bg_abs = abs_err[bg_mask]
+        bg_sq = sq_err[bg_mask]
+
+        results["background"] = {
+            "mae": _safe_mean(bg_abs),
+            "medae": _safe_median(bg_abs),
+            "rmse": _safe_rmse(bg_sq),
+            "count": int(bg_mask.sum().item()),
+        }
+
+    # -----------------------------
+    # Convert to mm if requested
+    # -----------------------------
+    if thickness_mm is not None:
+        results["global_mm"] = {
+            "mae": results["global"]["mae"] * thickness_mm if results["global"]["mae"] == results["global"]["mae"] else float("nan"),
+            "medae": results["global"]["medae"] * thickness_mm if results["global"]["medae"] == results["global"]["medae"] else float("nan"),
+            "rmse": results["global"]["rmse"] * thickness_mm if results["global"]["rmse"] == results["global"]["rmse"] else float("nan"),
+        }
+
+        results["per_level_mm"] = {}
+
+        for level, vals in results["per_level"].items():
+            results["per_level_mm"][level] = {
+                "mae": vals["mae"] * thickness_mm if vals["mae"] == vals["mae"] else float("nan"),
+                "medae": vals["medae"] * thickness_mm if vals["medae"] == vals["medae"] else float("nan"),
+                "rmse": vals["rmse"] * thickness_mm if vals["rmse"] == vals["rmse"] else float("nan"),
+                "count": vals["count"],
+            }
+
+        if include_background and "background" in results:
+            results["background_mm"] = {
+                "mae": results["background"]["mae"] * thickness_mm if results["background"]["mae"] == results["background"]["mae"] else float("nan"),
+                "medae": results["background"]["medae"] * thickness_mm if results["background"]["medae"] == results["background"]["medae"] else float("nan"),
+                "rmse": results["background"]["rmse"] * thickness_mm if results["background"]["rmse"] == results["background"]["rmse"] else float("nan"),
+                "count": results["background"]["count"],
+            }
+
+    return results
+
+
+
+
 def compute_iou_over_concatenated_sims(
     pred_all,
     gt_all,
@@ -542,6 +775,9 @@ def plot_error_histograms_with_levels(
     plot_absolute=False,
     max_cols=4,
     figsize_per_plot=(5, 4),
+    xlim=(-0.075, 0.075),          # zoomed view around +/-0.05
+    reference_lines=(-0.05, 0.05),
+    log_y=False,                   # set True if tails are hard to see
 ):
     """
     Plot global and per-depth-level error histograms.
@@ -566,7 +802,15 @@ def plot_error_histograms_with_levels(
         Max subplot columns
     figsize_per_plot : tuple
         Size per subplot block
+    xlim : tuple or None
+        X-axis limits for zooming, e.g. (-0.075, 0.075).
+        Use None to disable zoom.
+    reference_lines : tuple or None
+        Extra vertical reference lines, e.g. (-0.05, 0.05).
+    log_y : bool
+        If True, use logarithmic y-axis for histograms.
     """
+
     pred_all = torch.as_tensor(pred_all).float()
     gt_all = torch.as_tensor(gt_all).float()
 
@@ -590,30 +834,94 @@ def plot_error_histograms_with_levels(
     global_abs_err = abs_err_all[global_mask].cpu().numpy()
 
     # -------------------------
+    # Helper for vertical lines
+    # -------------------------
+    def add_error_reference_lines(ax, err_values):
+        ax.axvline(
+            0.0,
+            linestyle='--',
+            color='black',
+            linewidth=1.8,
+            label='Zero error'
+        )
+
+        if reference_lines is not None:
+            for ref in reference_lines:
+                ax.axvline(
+                    ref,
+                    linestyle='--',
+                    color='gray',
+                    linewidth=1.8,
+                    label=f'{ref:+.2f} reference'
+                )
+
+        ax.axvline(
+            err_values.mean(),
+            linestyle='-',
+            color='red',
+            linewidth=2.0,
+            label='Mean error'
+        )
+
+        ax.axvline(
+            np.median(err_values),
+            linestyle='-',
+            color='orange',
+            linewidth=2.0,
+            label='Median error'
+        )
+
+        if xlim is not None:
+            ax.set_xlim(xlim)
+
+        if log_y:
+            ax.set_yscale("log")
+
+    # -------------------------
     # Global signed histogram
     # -------------------------
-    plt.figure(figsize=(7, 5))
-    plt.hist(global_err, bins=bins)
-    plt.axvline(0.0, linestyle='--',color='black',label='Zero error')
-    plt.axvline(global_err.mean(), linestyle='-',color='red',label='Mean error')
-    plt.axvline(np.median(global_err), linestyle='-',color='orange',label='Median error')
-    plt.title(f"Global signed error histogram ({global_title_suffix})")
-    plt.xlabel("Signed error = pred - gt")
-    plt.ylabel("Count")
-    plt.legend()
-    plt.grid(alpha=0.3)
+    fig, ax = plt.subplots(figsize=(7, 5))
+
+    ax.hist(global_err, bins=bins, log=False)
+    add_error_reference_lines(ax, global_err)
+
+    ax.set_title(f"Global signed error histogram ({global_title_suffix})")
+    ax.set_xlabel("Signed error = pred - gt")
+    ax.set_ylabel("Count")
+    ax.legend(fontsize=9)
+    ax.grid(alpha=0.3)
+
+    plt.tight_layout()
     plt.show()
 
     # -------------------------
     # Global absolute histogram
     # -------------------------
     if plot_absolute:
-        plt.figure(figsize=(7, 5))
-        plt.hist(global_abs_err, bins=bins)
-        plt.title(f"Global absolute error histogram ({global_title_suffix})")
-        plt.xlabel("Absolute error = |pred - gt|")
-        plt.ylabel("Count")
-        plt.grid(alpha=0.3)
+        fig, ax = plt.subplots(figsize=(7, 5))
+
+        ax.hist(global_abs_err, bins=bins, log=log_y)
+
+        if xlim is not None:
+            ax.set_xlim(0.0, max(abs(xlim[0]), abs(xlim[1])))
+
+        if reference_lines is not None:
+            for ref in reference_lines:
+                ax.axvline(
+                    abs(ref),
+                    linestyle='--',
+                    color='gray',
+                    linewidth=1.8,
+                    label=f'|{ref:+.2f}| reference'
+                )
+
+        ax.set_title(f"Global absolute error histogram ({global_title_suffix})")
+        ax.set_xlabel("Absolute error = |pred - gt|")
+        ax.set_ylabel("Count")
+        ax.legend(fontsize=9)
+        ax.grid(alpha=0.3)
+
+        plt.tight_layout()
         plt.show()
 
     # -------------------------
@@ -627,7 +935,8 @@ def plot_error_histograms_with_levels(
         nrows, ncols,
         figsize=(figsize_per_plot[0] * ncols, figsize_per_plot[1] * nrows)
     )
-    axes = axes.flatten() if n_levels > 1 else [axes]
+
+    axes = np.array(axes).flatten() if n_levels > 1 else [axes]
 
     for i, level in enumerate(depth_levels):
         level = float(level)
@@ -639,16 +948,15 @@ def plot_error_histograms_with_levels(
         if len(level_err) > 0:
             ax.hist(level_err, bins=bins, log=False)
 
-            ax.axvline(0.0, linestyle='--', color='black', label='Zero error')
-            ax.axvline(level_err.mean(), linestyle='-', color='red', label='Mean error')
-            ax.axvline(np.median(level_err), linestyle='-', color='orange', label='Median error')
+            add_error_reference_lines(ax, level_err)
 
             ax.set_title(f"Depth={level:.3f}\nN={len(level_err)}")
             ax.set_xlabel("pred - gt")
             ax.set_ylabel("Count")
 
             ax.grid(True, linestyle='--', alpha=0.5)
-            ax.legend()
+            ax.legend(fontsize=8)
+
         else:
             ax.set_title(f"Depth={level:.3f}\nNo samples")
             ax.axis("off")
@@ -668,7 +976,8 @@ def plot_error_histograms_with_levels(
             nrows, ncols,
             figsize=(figsize_per_plot[0] * ncols, figsize_per_plot[1] * nrows)
         )
-        axes = axes.flatten() if n_levels > 1 else [axes]
+
+        axes = np.array(axes).flatten() if n_levels > 1 else [axes]
 
         for i, level in enumerate(depth_levels):
             level = float(level)
@@ -678,10 +987,27 @@ def plot_error_histograms_with_levels(
             level_abs = abs_err_all[level_mask].cpu().numpy()
 
             if len(level_abs) > 0:
-                ax.hist(level_abs, bins=bins)
+                ax.hist(level_abs, bins=bins, log=log_y)
+
+                if xlim is not None:
+                    ax.set_xlim(0.0, max(abs(xlim[0]), abs(xlim[1])))
+
+                if reference_lines is not None:
+                    for ref in reference_lines:
+                        ax.axvline(
+                            abs(ref),
+                            linestyle='--',
+                            color='gray',
+                            linewidth=1.8,
+                            label=f'|{ref:+.2f}| reference'
+                        )
+
                 ax.set_title(f"Depth={level:.3f}\nN={len(level_abs)}")
                 ax.set_xlabel("|pred - gt|")
                 ax.set_ylabel("Count")
+                ax.grid(True, linestyle='--', alpha=0.5)
+                ax.legend(fontsize=8)
+
             else:
                 ax.set_title(f"Depth={level:.3f}\nNo samples")
                 ax.axis("off")
