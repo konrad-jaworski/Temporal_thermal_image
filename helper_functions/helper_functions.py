@@ -414,9 +414,6 @@ def print_dataset_depth_metrics(results, thickness_mm=None):
             print(f"RMSE:  {fmt(results['background_mm']['rmse'])} mm")
 
 
-import torch
-
-
 def make_inner_1d_mask(mask, erosion_pixels=3, min_pixels=1):
     """
     Shrink each contiguous GT defect region along width direction.
