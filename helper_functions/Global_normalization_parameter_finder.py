@@ -4,7 +4,7 @@ import torch
 from tqdm import tqdm
 from helper_functions import d1_dy, d2_dx2, d1_dx, d2_dy2
 
-train_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb/*.npz"  # We work on removed baseline _rb
+train_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/open_source_data_npz_rb/*.npz"  # We work on removed baseline _rb
 files = sorted(glob.glob(train_folder))
 log_scaling = True  # True -> compute scales on log-transformed data, False -> raw data
 
@@ -176,7 +176,7 @@ print("Computed dT/dx scale:", scale_dx)
 # SAVE
 # =========================================================
 np.savez(
-    r"normalization_params_cooling_only.npz",
+    r"normalization_params_HC_opendataset.npz",
     scale=scale_temp,
     scale_dt=scale_dt,
     scale_dxx=scale_dxx,
