@@ -11,7 +11,7 @@ log_scaling = True  # True -> compute scales on log-transformed data, False -> r
 # =========================================================
 # Sequence selection
 # =========================================================
-use_cooling_only = True     # True -> use only cooling part, False -> use full sequence
+use_cooling_only = False     # True -> use only cooling part, False -> use full sequence
 cooling_frame = 254         # First frame of cooling phase
 
 print(f"Found {len(files)} training cubes")

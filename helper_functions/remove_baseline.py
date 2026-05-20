@@ -7,8 +7,7 @@ def preprocess_deltaT(
     output_folder, 
     baseline_frames=4,
     convert_to_C=False,
-    shift_to=None,
-    from_baseline=True
+    shift_to=None
 ):
     """
     Preprocess all .npz files: compute baseline from first `baseline_frames` frames,
@@ -42,11 +41,8 @@ def preprocess_deltaT(
             raise ValueError(f"{fname}: baseline_frames={baseline_frames} > sequence length={data_tr.shape[0]}")
 
         # compute baseline (average of first baseline_frames)
-        if from_baseline:
-            T0 = data_tr[0:baseline_frames, :, :].mean(axis=0)
-        else:
-            T0=20
-
+        T0 = data_tr[:baseline_frames, :, :].mean(axis=0)
+        
         # subtract baseline
         deltaT = data_tr - T0
 
@@ -66,6 +62,6 @@ def preprocess_deltaT(
 
 input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/open_source_data_npz"
 output_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/open_source_data_npz_rb"
-baseline_frames = 10  # you can change this depending on how many initial frames you want to consider as baseline
+baseline_frames = 9  # you can change this depending on how many initial frames you want to consider as baseline
 
-preprocess_deltaT(input_folder, output_folder, baseline_frames, convert_to_C=False,shift_to=None,from_baseline=False)
+preprocess_deltaT(input_folder, output_folder, baseline_frames, convert_to_C=False,shift_to=1)

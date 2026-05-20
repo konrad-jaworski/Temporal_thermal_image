@@ -50,7 +50,7 @@ pin_memory = (device.type == "cuda")
 # Transforms
 # -------------------------
 train_transforms = ComposeBScanTransforms([
-    NoiseAddition(), # Detectore wise noise addition
+    # NoiseAddition(), # Detectore wise noise addition
     RandomHorizontalFlipBscan(p=0.2), # keep as abseline invariance
     HorizontalShift(p=0.2),  # keep as baseline invariance
 ])
@@ -62,9 +62,9 @@ train_dataset = BScanDepthDataset(
     bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_bscan",
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_mask",
     transform=train_transforms,
-    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params_no_log.npz",
-    derivative_mode='phase_cos',
-    log_scaling=False,
+    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/normalization_params_HC_andlog1p_opendataset.npz",
+    derivative_mode=None,
+    log_scaling=True,
     cooling_phase=False
 )
 
@@ -72,9 +72,9 @@ val_dataset_clean = BScanDepthDataset(
     bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_bscan",
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_mask",
     transform=None,
-    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params_no_log.npz",
-    derivative_mode='phase_cos',
-    log_scaling=False,
+    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/normalization_params_HC_andlog1p_opendataset.npz",
+    derivative_mode=None,
+    log_scaling=True,
     cooling_phase=False
 )
 
@@ -124,8 +124,8 @@ GRAD_CLIP_NORM = 1.0  # set e.g. 1.0 if needed
 # -------------------------
 # Save paths
 # -------------------------
-main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs_official"
-model_name = "smartnet_net_heating_and_cooling_phase_cos_derivative_without_log_scaling"
+main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/open_source_data_models_official"
+model_name = "smartnet_net_heating_and_cooling_with_log_mapping"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -235,9 +235,9 @@ run_config = {
     "num_workers": 24,
     "lr": 1e-4,
     "loss": "MSE",
-    "channels": "derivative",
-    "derivative_mode": "phase_cos",
-    "Model":"smart Net heating and cooling phase cos derivatives but no log scaled",
+    "channels": "repeated",
+    "derivative_mode": "none",
+    "Model":"smart Net refined with log mapping and heating and cooling",
     "patience": patience
 }
 torch.save(run_config, os.path.join(model_dir, "run_config.pt"))
