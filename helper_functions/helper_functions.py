@@ -156,7 +156,7 @@ def d2_dx2(X: torch.Tensor)->torch.Tensor:
 
 class Interpolate:
     """
-    Interpolate data to a new size using PyTorch's interpolate function.
+    Interpolate data to a new size using PyTorch's interpolate function. It will interpolate both dimmensions of bscan
     """
     def __init__(self, size, mode='bilinear'):
         self.size = size
@@ -166,6 +166,25 @@ class Interpolate:
         
         data_interpolated = torch.nn.functional.interpolate(data.unsqueeze(0), size=self.size, mode=self.mode, align_corners=False)
         return data_interpolated.squeeze(0)
+    
+class Interpolate_mask:
+    """
+    Interpolate mask, it will use nearest neighbours to resize mask to fit into the bscan data.
+    We should input already torch format data.
+    """
+
+    def __init__(self,size,mode='nearest'):
+        self.size=size
+        self.mode=mode
+
+    def __call__(self,data):
+        data_resize=F.interpolate(data[None,None,:],
+                                  size=self.size,
+                                  mode=self.mode
+                                  ).squeeze(0).squeeze(0)
+        
+        return data_resize
+
     
 # Validation metrics: -----------------------------------------------------------------------------------
 

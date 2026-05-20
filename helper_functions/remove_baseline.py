@@ -7,7 +7,8 @@ def preprocess_deltaT(
     output_folder, 
     baseline_frames=4,
     convert_to_C=False,
-    shift_to=None
+    shift_to=None,
+    cliping=False
 ):
     """
     Preprocess all .npz files: compute baseline from first `baseline_frames` frames,
@@ -49,6 +50,9 @@ def preprocess_deltaT(
         # In case we want to match simulation closer
         if shift_to is not None:
             deltaT=deltaT[shift_to:,:,:]  # keep only frames from shift_to onwards
+        
+        if cliping==True:
+            deltaT = np.clip(deltaT, a_min=0, a_max=None)  # clip to [0, None] °C So that we would remove the outliers.
 
         # Prepare dictionary to save
         save_dict = {key: data_npz[key] for key in data_npz.files}  # copy all keys
@@ -62,6 +66,6 @@ def preprocess_deltaT(
 
 input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/open_source_data_npz"
 output_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/open_source_data_npz_rb"
-baseline_frames = 9  # you can change this depending on how many initial frames you want to consider as baseline
+baseline_frames = 8  # you can change this depending on how many initial frames you want to consider as baseline
 
-preprocess_deltaT(input_folder, output_folder, baseline_frames, convert_to_C=False,shift_to=1)
+preprocess_deltaT(input_folder, output_folder, baseline_frames, convert_to_C=False,shift_to=None,cliping=True)

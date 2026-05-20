@@ -2,7 +2,7 @@ import os
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-from helper_functions.helper_functions import Interpolate,d1_dx,d1_dy,d2_dx2,d2_dy2
+from helper_functions.helper_functions import Interpolate,d1_dx,d1_dy,d2_dx2,d2_dy2,Interpolate_mask
 
 class ComposeBScanTransforms:
     def __init__(self, transforms):
@@ -47,6 +47,7 @@ class BScanDepthDataset(Dataset):
             self.scale_d2_dt2 = config['scale_dtt']
 
         self.resize = Interpolate(size=512) # This assumes that the width of the Bscan is 512. If not, you may want to set size=(512,512) and specify the interpolation mode for each axis separately.
+        self.resize_mask=Interpolate_mask(size=512)
         self.files = sorted(os.listdir(bscan_dir))
 
         for f in self.files:
@@ -89,6 +90,9 @@ class BScanDepthDataset(Dataset):
             bscan = bscan.unsqueeze(0)     # [1, H, W]
             bscan = self.resize(bscan)     # [1, 512, 512] if your resize does both axes
             bscan = bscan.repeat(3, 1, 1)  # [3, 512, 512]
+
+            # We also resize the mask for the bscan
+            depth=self.resize_mask(depth)
 
             return bscan.float(), depth.float()
 
@@ -133,6 +137,9 @@ class BScanDepthDataset(Dataset):
         d2 = self.resize(d2)
 
         x = torch.cat((bscan, d1, d2), dim=0)   # [3, 512, 512]
+
+        # Resize mask to match the data
+        depth=self.resize_mask(depth)
 
         return x.float(), depth.float()
     
