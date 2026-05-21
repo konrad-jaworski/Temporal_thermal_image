@@ -12,6 +12,9 @@ from tqdm import tqdm
 from data.data_operators import BScanDepthDataset
 from networks.Unets import BnetSmallKernelSmarterRefine
 
+from helper_functions.helper_functions import HorizontalShift,NoiseAddition,RandomHorizontalFlipBscan
+from data.data_operators import BScanDepthDataset, ComposeBScanTransforms
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 pin_memory = (device.type == "cuda")
 
@@ -42,13 +45,18 @@ seed_everything(SEED, deterministic=False)
 g = torch.Generator()
 g.manual_seed(SEED)
 
+train_transforms = ComposeBScanTransforms([
+    RandomHorizontalFlipBscan(p=0.2), # keep as abseline invariance
+    HorizontalShift(p=0.2),  # keep as baseline invariance
+])
+
 
 # We are using the sound regions of the experimental sample to calibrate the model to non-uniform heating
 train_dataset = BScanDepthDataset(
-    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/Experimental_sample/exp_bscans_domain",
-    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/Experimental_sample/exp_masks_domain",
-    transform=None,
-    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params.npz",
+    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits/val_surface_1p0mm_test_surface_2p0mm/training_data",
+    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits/val_surface_1p0mm_test_surface_2p0mm/training_mask",
+    transform=train_transforms,
+    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/normalization_params_HC_opendataset.npz",
     derivative_mode=None,
     log_scaling=True,
     cooling_phase=False
@@ -56,10 +64,10 @@ train_dataset = BScanDepthDataset(
 
 # We control the model over validaton set in order to not drop the perfomance in depth regression
 val_dataset_clean = BScanDepthDataset(
-    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_bscan",
-    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_mask",
+    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits/val_surface_1p0mm_test_surface_2p0mm/validation_data",
+    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits/val_surface_1p0mm_test_surface_2p0mm/validation_mask",
     transform=None,
-    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/normalization_params.npz",
+    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/normalization_params_HC_opendataset.npz",
     derivative_mode=None,
     log_scaling=True,
     cooling_phase=False
@@ -127,7 +135,7 @@ GRAD_CLIP_NORM = 1.0
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/models_logs_official"
-model_name = "smart_net_H_C_domain"
+model_name = "smart_net_H_C_opensource_exp_second_attempt"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -137,7 +145,7 @@ best_path = os.path.join(model_dir, "best_model_clean.pth")
 # -------------------------
 # Training config
 # -------------------------
-num_epochs = 30 # In a form of a sweep
+num_epochs = 500 # In a form of a sweep
 best_clean_loss = float("inf")
 
 min_delta = 1e-5 # in case if somehow this will produce better performance on validation dataset

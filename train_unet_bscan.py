@@ -62,9 +62,9 @@ train_dataset = BScanDepthDataset(
     bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits/val_surface_1p0mm_test_surface_2p0mm/training_data",
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits/val_surface_1p0mm_test_surface_2p0mm/training_mask",
     transform=train_transforms,
-    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/normalization_params_HC_opendataset.npz",
+    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/normalization_params_HC_opendataset_nolog.npz",
     derivative_mode=None,
-    log_scaling=True,
+    log_scaling=False,
     cooling_phase=False
 )
 
@@ -72,9 +72,9 @@ val_dataset_clean = BScanDepthDataset(
     bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits/val_surface_1p0mm_test_surface_2p0mm/validation_data",
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits/val_surface_1p0mm_test_surface_2p0mm/validation_mask",
     transform=None,
-    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/normalization_params_HC_opendataset.npz",
+    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/normalization_params_HC_opendataset_nolog.npz",
     derivative_mode=None,
-    log_scaling=True,
+    log_scaling=False,
     cooling_phase=False
 )
 
@@ -125,7 +125,7 @@ GRAD_CLIP_NORM = 1.0  # set e.g. 1.0 if needed
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/open_source_data_models_official"
-model_name = "smartnet_net_heating_and_cooling_with_log_mapping"
+model_name = "smart_net_heating_and_cooling_with_no_log_mapping"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -139,7 +139,7 @@ last_path = os.path.join(model_dir, "last_model.pth")
 num_epochs = 500
 best_clean_loss = float("inf")
 
-patience = 30
+patience = 30 # Normaly I would use 30
 min_delta = 1e-5
 counter = 0
 
@@ -237,7 +237,7 @@ run_config = {
     "loss": "MSE",
     "channels": "repeated",
     "derivative_mode": "none",
-    "Model":"smart Net refined with log mapping and heating and cooling",
+    "Model":"smart Net refined with no log mapping and heating and cooling",
     "patience": patience
 }
 torch.save(run_config, os.path.join(model_dir, "run_config.pt"))

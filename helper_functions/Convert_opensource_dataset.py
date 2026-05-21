@@ -33,7 +33,6 @@ def fahrenheit_raw_to_celsius(data_raw):
     Example:
         7600 -> 76.00 °F -> 24.44 °C
 
-    If your data is truly milli-Fahrenheit, change divisor to 1000.0.
     """
     divisor = 100.0
 

@@ -70,6 +70,7 @@ class BScanDepthDataset(Dataset):
         bscan = torch.from_numpy(bscan).to(self.dtype)
         depth = torch.from_numpy(depth).to(self.dtype)
 
+        # Decision whether we use the cooling or full sequence
         if self.cooling_phase:
             bscan=bscan[self.cooling_frame:,:]
         
@@ -81,6 +82,7 @@ class BScanDepthDataset(Dataset):
         if self.log_scaling:
             bscan = torch.log1p(bscan) 
 
+        # Normalization of data
         bscan = bscan / self.scale
 
         # --------------------------------------------------
