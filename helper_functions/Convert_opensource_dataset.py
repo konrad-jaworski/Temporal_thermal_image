@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-
 import numpy as np
 import scipy.io as sio
 from PIL import Image
@@ -136,6 +135,8 @@ def preprocess_mat_dataset(data_folder, mask_folder, output_folder):
 
         # [H, W] -> [W, H]
         mask_rot = mask_raw.T
+
+        # Now we need to crop out the mask and data to ROI
 
         mask_out = convert_mask_to_removed_depth_normalized(
             mask_rot,
