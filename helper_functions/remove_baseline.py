@@ -66,6 +66,6 @@ def preprocess_deltaT(
 
 input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/open_source_data_npz"
 output_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/open_source_data_npz_rb"
-baseline_frames = 8  # you can change this depending on how many initial frames you want to consider as baseline
+baseline_frames = 10  # you can change this depending on how many initial frames you want to consider as baseline
 
-preprocess_deltaT(input_folder, output_folder, baseline_frames, convert_to_C=False,shift_to=None,cliping=True)
+preprocess_deltaT(input_folder, output_folder, baseline_frames, convert_to_C=False,shift_to=None,cliping=False)

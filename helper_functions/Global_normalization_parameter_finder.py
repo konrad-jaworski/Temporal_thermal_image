@@ -2,181 +2,178 @@ import numpy as np
 import glob
 import torch
 from tqdm import tqdm
+
 from helper_functions import d1_dy, d2_dx2, d1_dx, d2_dy2
 
-train_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/open_source_data_npz_rb/*.npz"  # We work on removed baseline _rb
+
+train_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/open_source_data_npz_rb/*.npz"
 files = sorted(glob.glob(train_folder))
-log_scaling = False  # True -> compute scales on log-transformed data, False -> raw data
 
 # =========================================================
-# Sequence selection
+# Configuration
 # =========================================================
-use_cooling_only = False     # True -> use only cooling part, False -> use full sequence
-cooling_frame = 254         # First frame of cooling phase
+log_scaling = False
+
+use_cooling_only = True
+cooling_frame = 11
+
+compute_derivative_scales = True
 
 print(f"Found {len(files)} training cubes")
 print(f"Mode: {'cooling only' if use_cooling_only else 'full sequence'}")
+
 if use_cooling_only:
     print(f"Cooling starts from frame: {cooling_frame}")
 
 
 # =========================================================
-# Helper: percentile from histogram
-# =========================================================
-def percentile_from_hist(hist, bin_edges, q):
-    cdf = np.cumsum(hist)
-    target = q / 100.0 * cdf[-1]
-    idx = np.searchsorted(cdf, target)
-    idx = min(idx, len(bin_edges) - 2)
-    return bin_edges[idx]
-
-
-# =========================================================
 # Helper: sequence selection
 # =========================================================
-def select_sequence(d, use_cooling_only=False, cooling_frame=254):
+def select_sequence(d, use_cooling_only=False, cooling_frame=0):
+    """
+    Select full sequence or cooling-only sequence.
+
+    Parameters
+    ----------
+    d : np.ndarray
+        Thermal sequence with shape [T, H, W].
+
+    use_cooling_only : bool
+        If True, only frames from cooling_frame onward are used.
+
+    cooling_frame : int
+        First frame of cooling phase.
+
+    Returns
+    -------
+    d : np.ndarray
+        Selected sequence.
+    """
+
     if use_cooling_only:
         d = d[cooling_frame:, :, :]
+
     return d
 
 
 # =========================================================
-# Helper: data transform
+# Helper: input transform
 # =========================================================
-def transform_data(d, log_scaling=True):
+def transform_data(d, log_scaling=False):
+    """
+    Transform baseline-removed thermal data.
+
+    Negative values are clipped to zero because log1p is intended here
+    for positive temperature rise.
+
+    Parameters
+    ----------
+    d : np.ndarray
+        Baseline-removed thermal sequence.
+
+    log_scaling : bool
+        If True, applies log1p after clipping to non-negative values.
+
+    Returns
+    -------
+    d : np.ndarray
+        Transformed sequence.
+    """
+
     d = np.maximum(d, 0.0)
+
     if log_scaling:
         d = np.log1p(d)
-    return d
+
+    return d.astype(np.float32)
 
 
 # =========================================================
-# PASS 1: find temperature scale
+# PASS 1: maximum input scale
 # =========================================================
-temp_max = 0.0
+scale_temp = 0.0
 
-for f in tqdm(files, desc="Pass 1a/3: estimate temp max"):
-    d = np.load(f)["data"]
-    d = select_sequence(d, use_cooling_only=use_cooling_only, cooling_frame=cooling_frame)
-    d = transform_data(d, log_scaling=log_scaling)
-    temp_max = max(temp_max, float(d.max()))
+for f in tqdm(files, desc="Pass 1: temperature maximum"):
+    d = np.load(f)["data"].astype(np.float32)
 
-n_bins_temp = 20000
-temp_edges = np.linspace(0.0, temp_max, n_bins_temp + 1)
-temp_hist = np.zeros(n_bins_temp, dtype=np.int64)
+    d = select_sequence(
+        d,
+        use_cooling_only=use_cooling_only,
+        cooling_frame=cooling_frame,
+    )
 
-for f in tqdm(files, desc="Pass 1b/3: histogram temperature"):
-    d = np.load(f)["data"]
-    d = select_sequence(d, use_cooling_only=use_cooling_only, cooling_frame=cooling_frame)
-    d = transform_data(d, log_scaling=log_scaling)
+    d_for_input = transform_data(d, log_scaling=log_scaling)
 
-    h, _ = np.histogram(d, bins=temp_edges)
-    temp_hist += h
+    scale_temp = max(scale_temp, float(d_for_input.max()))
 
-scale_temp = float(percentile_from_hist(temp_hist, temp_edges, 99.5))
-print("\nComputed temperature scale:", scale_temp)
+scale_temp = max(scale_temp, 1e-12)
+
+print("\nComputed temperature/input scale:", scale_temp)
 
 
 # =========================================================
-# PASS 2: estimate derivative maxima
+# PASS 2: derivative maxima
 # =========================================================
-dt_max = 0.0
-dxx_max = 0.0
-dtt_max = 0.0
-dx_max = 0.0
+scale_dt = 1.0
+scale_dxx = 1.0
+scale_dx = 1.0
+scale_dtt = 1.0
 
-for f in tqdm(files, desc="Pass 2/3: estimate derivative maxima"):
-    d = np.load(f)["data"]
-    d = select_sequence(d, use_cooling_only=use_cooling_only, cooling_frame=cooling_frame)
-    d = transform_data(d, log_scaling=log_scaling)
+if compute_derivative_scales:
+    dt_max = 0.0
+    dxx_max = 0.0
+    dx_max = 0.0
+    dtt_max = 0.0
 
-    X = d / scale_temp
-    T, H, W = X.shape
+    for f in tqdm(files, desc="Pass 2: derivative maxima"):
+        d = np.load(f)["data"].astype(np.float32)
 
-    for row in tqdm(range(H), leave=False):
-        bscan = torch.from_numpy(X[:, row, :]).float()
+        d = select_sequence(
+            d,
+            use_cooling_only=use_cooling_only,
+            cooling_frame=cooling_frame,
+        )
 
-        dt = d1_dy(bscan).abs()
-        dxx = d2_dx2(bscan).abs()
-        dx = d1_dx(bscan).abs()
-        dtt = d2_dy2(bscan).abs()
+        # ---------------------------------------------------------
+        # Important:
+        # Derivatives are computed on raw baseline-removed data,
+        # not on d / scale_temp.
+        #
+        # This keeps derivative channels in raw physical scale.
+        # ---------------------------------------------------------
+        d_for_derivatives = np.maximum(d, 0.0)
 
-        dt_max = max(dt_max, float(dt.max()))
-        dxx_max = max(dxx_max, float(dxx.max()))
-        dx_max = max(dx_max, float(dx.max()))
-        dtt_max = max(dtt_max, float(dtt.max()))
+        T, H, W = d_for_derivatives.shape
 
-print("\nEstimated max |dT/dt|:", dt_max)
-print("Estimated max |d2T/dx2|:", dxx_max)
-print("Estimated max |d2T/dt2|:", dtt_max)
-print("Estimated max |dT/dx|:", dx_max)
+        for row in tqdm(range(H), leave=False):
+            bscan = torch.from_numpy(d_for_derivatives[:, row, :]).float()
 
+            dt = d1_dy(bscan).abs()
+            dxx = d2_dx2(bscan).abs()
+            dx = d1_dx(bscan).abs()
+            dtt = d2_dy2(bscan).abs()
 
-# =========================================================
-# PASS 3: histogram accumulation
-# =========================================================
-n_bins_dt = 20000
-n_bins_dxx = 20000
-n_bins_dx = 20000
-n_bins_dtt = 20000
+            dt_max = max(dt_max, float(dt.max()))
+            dxx_max = max(dxx_max, float(dxx.max()))
+            dx_max = max(dx_max, float(dx.max()))
+            dtt_max = max(dtt_max, float(dtt.max()))
 
-dt_max = max(dt_max, 1e-12)
-dxx_max = max(dxx_max, 1e-12)
-dtt_max = max(dtt_max, 1e-12)
-dx_max = max(dx_max, 1e-12)
+    scale_dt = max(dt_max, 1e-12)
+    scale_dxx = max(dxx_max, 1e-12)
+    scale_dx = max(dx_max, 1e-12)
+    scale_dtt = max(dtt_max, 1e-12)
 
-dt_edges = np.linspace(0.0, dt_max, n_bins_dt + 1)
-dxx_edges = np.linspace(0.0, dxx_max, n_bins_dxx + 1)
-dtt_edges = np.linspace(0.0, dtt_max, n_bins_dtt + 1)
-dx_edges = np.linspace(0.0, dx_max, n_bins_dx + 1)
-
-dt_hist = np.zeros(n_bins_dt, dtype=np.int64)
-dxx_hist = np.zeros(n_bins_dxx, dtype=np.int64)
-dtt_hist = np.zeros(n_bins_dtt, dtype=np.int64)
-dx_hist = np.zeros(n_bins_dx, dtype=np.int64)
-
-for f in tqdm(files, desc="Pass 3/3: histogram derivatives"):
-    d = np.load(f)["data"]
-    d = select_sequence(d, use_cooling_only=use_cooling_only, cooling_frame=cooling_frame)
-    d = transform_data(d, log_scaling=log_scaling)
-
-    X = d / scale_temp
-    T, H, W = X.shape
-
-    for row in tqdm(range(H), leave=False):
-        bscan = torch.from_numpy(X[:, row, :]).float()
-
-        dt = d1_dy(bscan).abs().numpy()
-        dxx = d2_dx2(bscan).abs().numpy()
-        dtt = d2_dy2(bscan).abs().numpy()
-        dx = d1_dx(bscan).abs().numpy()
-
-        h_dt, _ = np.histogram(dt, bins=dt_edges)
-        h_dxx, _ = np.histogram(dxx, bins=dxx_edges)
-        h_dtt, _ = np.histogram(dtt, bins=dtt_edges)
-        h_dx, _ = np.histogram(dx, bins=dx_edges)
-
-        dt_hist += h_dt
-        dxx_hist += h_dxx
-        dtt_hist += h_dtt
-        dx_hist += h_dx
-
-scale_dt = float(percentile_from_hist(dt_hist, dt_edges, 99.5))
-scale_dxx = float(percentile_from_hist(dxx_hist, dxx_edges, 99.5))
-scale_dtt = float(percentile_from_hist(dtt_hist, dtt_edges, 99.5))
-scale_dx = float(percentile_from_hist(dx_hist, dx_edges, 99.5))
-
-print("\nComputed dT/dt scale:", scale_dt)
-print("Computed d2T/dx2 scale:", scale_dxx)
-print("Computed d2T/dt2 scale:", scale_dtt)
-print("Computed dT/dx scale:", scale_dx)
+    print("\nComputed max |dT/dt|:", scale_dt)
+    print("Computed max |d2T/dx2|:", scale_dxx)
+    print("Computed max |dT/dx|:", scale_dx)
+    print("Computed max |d2T/dt2|:", scale_dtt)
 
 
 # =========================================================
 # SAVE
 # =========================================================
 np.savez(
-    r"normalization_params_HC_opendataset_nolog.npz",
+    r"normalization_params_C_opendataset_max.npz",
     scale=scale_temp,
     scale_dt=scale_dt,
     scale_dxx=scale_dxx,
@@ -184,7 +181,9 @@ np.savez(
     scale_dtt=scale_dtt,
     log_scaling=log_scaling,
     use_cooling_only=use_cooling_only,
-    cooling_frame=cooling_frame
+    cooling_frame=cooling_frame,
+    derivative_scale_mode="raw_max",
+    temperature_scale_mode="max",
 )
 
 print("\nSaved normalization parameters.")

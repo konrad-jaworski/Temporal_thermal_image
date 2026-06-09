@@ -397,13 +397,54 @@ npz_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Datas
 
 output_root = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits"
 
-summary = split_npz_bscans_by_surface_depth(
-    npz_folder=npz_folder,
-    output_root=output_root,
-    val_depth_surface_mm=1.0,
-    test_depth_surface_mm=2.0,
-    background_ratio=1.0,
-    seed=42,
-    tol=1e-3,
-    overwrite=True,
-)
+# summary = split_npz_bscans_by_surface_depth(
+#     npz_folder=npz_folder,
+#     output_root=output_root,
+#     val_depth_surface_mm=1.0,
+#     test_depth_surface_mm=2.0,
+#     background_ratio=1.0,
+#     seed=42,
+#     tol=1e-3,
+#     overwrite=True,
+# )
+
+# =========================================================
+# Generate all 20 validation/test depth combinations
+# =========================================================
+
+surface_depths = [0.5, 1.0, 1.5, 2.0, 2.5]
+
+all_summaries = []
+
+for test_depth in surface_depths:
+    for val_depth in surface_depths:
+
+        # Validation depth and test depth must be different
+        if val_depth == test_depth:
+            continue
+
+        summary = split_npz_bscans_by_surface_depth(
+            npz_folder=npz_folder,
+            output_root=output_root,
+            val_depth_surface_mm=val_depth,
+            test_depth_surface_mm=test_depth,
+            background_ratio=1.0,
+            seed=42,
+            tol=1e-3,
+            overwrite=True,
+        )
+
+        all_summaries.append(summary)
+
+
+# =========================================================
+# Save global summary for all 20 splits
+# =========================================================
+
+global_summary_path = Path(output_root) / "all_splits_summary.json"
+
+with open(global_summary_path, "w") as f:
+    json.dump(all_summaries, f, indent=4)
+
+print("\nGenerated all 20 split configurations.")
+print(f"Global summary saved to: {global_summary_path}")

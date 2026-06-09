@@ -59,23 +59,25 @@ train_transforms = ComposeBScanTransforms([
 # Datasets
 # -------------------------
 train_dataset = BScanDepthDataset(
-    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits/val_surface_1p0mm_test_surface_2p0mm/training_data",
-    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits/val_surface_1p0mm_test_surface_2p0mm/training_mask",
+    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits/val_surface_1p5mm_test_surface_2p0mm/training_data",
+    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits/val_surface_1p5mm_test_surface_2p0mm/training_mask",
     transform=train_transforms,
-    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/normalization_params_HC_opendataset_nolog.npz",
+    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/normalization_params_C_opendataset_max.npz",
     derivative_mode=None,
-    log_scaling=False,
-    cooling_phase=False
+    log_scaling=True,
+    cooling_phase=True,
+    cooling_frame=11
 )
 
 val_dataset_clean = BScanDepthDataset(
-    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits/val_surface_1p0mm_test_surface_2p0mm/validation_data",
-    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits/val_surface_1p0mm_test_surface_2p0mm/validation_mask",
+    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits/val_surface_1p5mm_test_surface_2p0mm/validation_data",
+    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits/val_surface_1p5mm_test_surface_2p0mm/validation_mask",
     transform=None,
-    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/normalization_params_HC_opendataset_nolog.npz",
+    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/normalization_params_C_opendataset_max.npz",
     derivative_mode=None,
-    log_scaling=False,
-    cooling_phase=False
+    log_scaling=True,
+    cooling_phase=True,
+    cooling_frame=11
 )
 
 # -------------------------
@@ -124,8 +126,8 @@ GRAD_CLIP_NORM = 1.0  # set e.g. 1.0 if needed
 # -------------------------
 # Save paths
 # -------------------------
-main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/open_source_data_models_official"
-model_name = "smart_net_heating_and_cooling_with_no_log_mapping"
+main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/open_source_data_second_attempt"
+model_name = "smart_net_cooling_with_log1p_mapping_case_val_1p5_test_2p0mm"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -237,7 +239,7 @@ run_config = {
     "loss": "MSE",
     "channels": "repeated",
     "derivative_mode": "none",
-    "Model":"smart Net refined with no log mapping and heating and cooling",
+    "Model":"smart Net refined with log1p mapping and cooling phase",
     "patience": patience
 }
 torch.save(run_config, os.path.join(model_dir, "run_config.pt"))
