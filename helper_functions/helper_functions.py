@@ -13,21 +13,12 @@ from tqdm import tqdm
 # Augmentation: -----------------------------------------------------------------------------------
 
 class NoiseAddition:
-    def __init__(self, sigma_mean=0.065, sigma_std=0.01, sigma_min=0.04, sigma_max=0.09):
-        self.sigma_mean = sigma_mean
-        self.sigma_std = sigma_std
-        self.sigma_min = sigma_min
-        self.sigma_max = sigma_max
+    def __init__(self, sigma=0.065):
+        self.sigma = sigma  # measured camera noise in °C
 
     def __call__(self, bscan, depth):
-        sigma = torch.normal(
-            mean=torch.tensor(self.sigma_mean),
-            std=torch.tensor(self.sigma_std)
-        ).item()
-        sigma = max(self.sigma_min, min(self.sigma_max, sigma))
-
-        noise = torch.randn_like(bscan) * sigma
-        return (bscan + noise).clamp_min(0.0), depth
+        noise = torch.randn_like(bscan) * self.sigma
+        return bscan + noise, depth
     
 class RandomHorizontalFlipBscan:
     """

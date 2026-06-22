@@ -95,9 +95,9 @@ def extract_rowwise_bscan_and_targets(
     print(f"Done. Saved {sample_counter} row-wise samples.")
 
 
-input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/topology_exp_2/exp_rb"
-output_bscan_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/topology_exp_2/topology_bscans"
-output_depth_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/topology_exp_2/topology_masks"
+input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb"
+output_bscan_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb/training_bscans"
+output_depth_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb/training_masks"
 
 lower_bound = 0
 upper_bound = 512

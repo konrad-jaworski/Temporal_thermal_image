@@ -10,7 +10,8 @@ from tqdm import tqdm
 
 from helper_functions.helper_functions import HorizontalShift,NoiseAddition,RandomHorizontalFlipBscan
 from data.data_operators import BScanDepthDataset, ComposeBScanTransforms
-from networks.Unets import BnetSmallKernelSmarterRefine,BnetMean
+
+from networks.Unets import BnetSmallKernelSmarterRefine,BnetSmallKernelSmarter,BnetSmallKernel,BnetSum
 
 
 # -------------------------
@@ -50,7 +51,7 @@ pin_memory = (device.type == "cuda")
 # Transforms
 # -------------------------
 train_transforms = ComposeBScanTransforms([
-    # NoiseAddition(), # Detectore wise noise addition, for experimental data we remove it
+    NoiseAddition(), # Detectore wise noise addition, for experimental data we remove it
     RandomHorizontalFlipBscan(p=0.2), # keep as abseline invariance
     HorizontalShift(p=0.2),  # keep as baseline invariance
 ])
@@ -59,25 +60,23 @@ train_transforms = ComposeBScanTransforms([
 # Datasets
 # -------------------------
 train_dataset = BScanDepthDataset(
-    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits/val_surface_1p5mm_test_surface_2p0mm/training_data",
-    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits/val_surface_1p5mm_test_surface_2p0mm/training_mask",
+    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb/training_bscans",
+    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb/training_masks",
     transform=train_transforms,
-    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/normalization_params_C_opendataset_max.npz",
+    normalization_path=None,
     derivative_mode=None,
     log_scaling=True,
-    cooling_phase=True,
-    cooling_frame=11
+    cooling_phase=False
 )
 
 val_dataset_clean = BScanDepthDataset(
-    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits/val_surface_1p5mm_test_surface_2p0mm/validation_data",
-    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/bscan_splits/val_surface_1p5mm_test_surface_2p0mm/validation_mask",
+    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_rb/validation_bscan",
+    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_rb/validation_mask",
     transform=None,
-    normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/normalization_params_C_opendataset_max.npz",
+    normalization_path=None,
     derivative_mode=None,
     log_scaling=True,
-    cooling_phase=True,
-    cooling_frame=11
+    cooling_phase=False
 )
 
 # -------------------------
@@ -113,7 +112,6 @@ val_loader_clean = DataLoader(
 # -------------------------
 
 model = BnetSmallKernelSmarterRefine().to(device)
-# model = BnetMean().to(device)
 
 # MSE loss (Stage 1 baseline)
 criterion = nn.MSELoss()
@@ -126,8 +124,8 @@ GRAD_CLIP_NORM = 1.0  # set e.g. 1.0 if needed
 # -------------------------
 # Save paths
 # -------------------------
-main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/open_source_data_second_attempt"
-model_name = "smart_net_cooling_with_log1p_mapping_case_val_1p5_test_2p0mm"
+main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/Model_performance_CFRP_sim_exp_publication"
+model_name = "smartnet_refine"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -141,7 +139,7 @@ last_path = os.path.join(model_dir, "last_model.pth")
 num_epochs = 500
 best_clean_loss = float("inf")
 
-patience = 30 # Normaly I would use 30
+patience = 30 
 min_delta = 1e-5
 counter = 0
 
@@ -239,7 +237,7 @@ run_config = {
     "loss": "MSE",
     "channels": "repeated",
     "derivative_mode": "none",
-    "Model":"smart Net refined with log1p mapping and cooling phase",
+    "Model":"smartnet refine",
     "patience": patience
 }
 torch.save(run_config, os.path.join(model_dir, "run_config.pt"))

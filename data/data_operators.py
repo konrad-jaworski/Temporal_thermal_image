@@ -147,16 +147,13 @@ class BScanDepthDataset(Dataset):
                 f"Allowed modes are {allowed_modes}."
             )
 
-        if self.normalization_path is None:
-            raise ValueError("normalization_path must be provided.")
-
-        config = np.load(self.normalization_path, allow_pickle=True)
-
-        if "scale" not in config:
-            raise KeyError("Normalization file must contain key 'scale'.")
-
-        self.scale = float(config["scale"])
-        self._check_scale(self.scale, "scale")
+        if self.normalization_path is not None:
+            config = np.load(self.normalization_path, allow_pickle=True)
+            if "scale" not in config:
+                raise KeyError("Normalization file must contain key 'scale'.")
+            
+            self.scale = float(config["scale"])
+            self._check_scale(self.scale, "scale")
 
         if self.derivative_mode in ["time", "space"]:
             required_keys = ["scale_dt", "scale_dxx", "scale_dx", "scale_dtt"]
@@ -259,7 +256,7 @@ class BScanDepthDataset(Dataset):
         # Negative baseline-removed values are clipped to zero to match the
         # global normalization parameter finder.
         # --------------------------------------------------
-        bscan_raw = bscan
+        bscan_raw = bscan # This in practice requires some filtering to implement in future.
         bscan_pos = torch.clamp(bscan_raw, min=0.0)
 
         # --------------------------------------------------
@@ -286,7 +283,7 @@ class BScanDepthDataset(Dataset):
 
             depth = self.resize_mask(depth) # [512]
 
-            return x.float(), depth.float()
+            return x.float(), depth.float() # it ends here if we would not investigate any channel augmentation.
 
         # --------------------------------------------------
         # Additional channels.
