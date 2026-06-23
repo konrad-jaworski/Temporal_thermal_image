@@ -111,7 +111,7 @@ val_loader_clean = DataLoader(
 # Model / loss / optimizer
 # -------------------------
 
-model = BnetSmallKernelSmarterRefine().to(device)
+model = BnetSmallKernel().to(device)
 
 # MSE loss (Stage 1 baseline)
 criterion = nn.MSELoss()
@@ -125,7 +125,7 @@ GRAD_CLIP_NORM = 1.0  # set e.g. 1.0 if needed
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/Model_performance_CFRP_sim_exp_publication"
-model_name = "smartnet_refine"
+model_name = "smartnet_just_kernel"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 
