@@ -8,10 +8,10 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from helper_functions.helper_functions import HorizontalShift,NoiseAddition,RandomHorizontalFlipBscan
+from helper_functions.helper_functions import HorizontalShift,NoiseAdditionExperiment,RandomHorizontalFlipBscan
 from data.data_operators import BScanDepthDataset, ComposeBScanTransforms
 
-from networks.Unets import BnetSmallKernelSmarterRefine,BnetSmallKernelSmarter,BnetSmallKernel,BnetSum
+from networks.Unets import BnetSmallKernelSmarterRefine,BnetSmallKernelSmarter,BnetSmallKernel,BnetSum,BnetMean
 
 
 # -------------------------
@@ -51,7 +51,7 @@ pin_memory = (device.type == "cuda")
 # Transforms
 # -------------------------
 train_transforms = ComposeBScanTransforms([
-    NoiseAddition(), # Detectore wise noise addition, for experimental data we remove it
+    NoiseAdditionExperiment(), # Detectore wise noise addition, for experimental data we remove it
     RandomHorizontalFlipBscan(p=0.2), # keep as abseline invariance
     HorizontalShift(p=0.2),  # keep as baseline invariance
 ])
@@ -111,7 +111,7 @@ val_loader_clean = DataLoader(
 # Model / loss / optimizer
 # -------------------------
 
-model = BnetSmallKernel().to(device)
+model = BnetMean().to(device)
 
 # MSE loss (Stage 1 baseline)
 criterion = nn.MSELoss()
@@ -125,7 +125,7 @@ GRAD_CLIP_NORM = 1.0  # set e.g. 1.0 if needed
 # Save paths
 # -------------------------
 main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/Model_performance_CFRP_sim_exp_publication"
-model_name = "smartnet_just_kernel"
+model_name = "bnet_mean"
 model_dir = os.path.join(main_path, model_name)
 os.makedirs(model_dir, exist_ok=True)
 

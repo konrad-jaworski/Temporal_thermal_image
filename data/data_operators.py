@@ -152,7 +152,7 @@ class BScanDepthDataset(Dataset):
             if "scale" not in config:
                 raise KeyError("Normalization file must contain key 'scale'.")
             
-            self.scale = float(config["scale"])
+            self.scale = float(config["scale"]) # Only temperature scale is implemented
             self._check_scale(self.scale, "scale")
 
         if self.derivative_mode in ["time", "space"]:
@@ -174,6 +174,7 @@ class BScanDepthDataset(Dataset):
             self._check_scale(self.scale_d_dx, "scale_dx")
             self._check_scale(self.scale_d2_dt2, "scale_dtt")
 
+        # Resising of the bscan to fit into the network
         self.resize = Interpolate(size=resize_size)
         self.resize_mask = Interpolate_mask(size=resize_size)
 
@@ -209,13 +210,15 @@ class BScanDepthDataset(Dataset):
         return len(self.files)
 
     def __getitem__(self, idx):
+        # We grab the folder
         fname = self.files[idx]
-
+        # From it we grab bscan and the depth mask
         bscan_path = os.path.join(self.bscan_dir, fname)
         depth_path = os.path.join(self.depth_dir, fname)
-
         bscan = np.load(bscan_path)   # [T, W]
         depth = np.load(depth_path)   # [W]
+
+
 
         if bscan.ndim != 2:
             raise ValueError(f"B-scan must be 2D [T, W], got {bscan.shape} in {fname}")
@@ -229,6 +232,7 @@ class BScanDepthDataset(Dataset):
                 f"bscan width={bscan.shape[1]}, depth width={depth.shape[0]}"
             )
 
+        # Projecting it into the torch tensor
         bscan = torch.from_numpy(bscan).to(self.dtype)
         depth = torch.from_numpy(depth).to(self.dtype)
 
@@ -251,15 +255,6 @@ class BScanDepthDataset(Dataset):
             bscan, depth = self.transform(bscan, depth)
 
         # --------------------------------------------------
-        # Keep raw baseline-removed tensor for derivative calculation.
-        #
-        # Negative baseline-removed values are clipped to zero to match the
-        # global normalization parameter finder.
-        # --------------------------------------------------
-        bscan_raw = bscan # This in practice requires some filtering to implement in future.
-        bscan_pos = torch.clamp(bscan_raw, min=0.0)
-
-        # --------------------------------------------------
         # Base channel preprocessing.
         #
         # If log_scaling=True:
@@ -269,9 +264,9 @@ class BScanDepthDataset(Dataset):
         #     raw positive temperature rise is divided by global scale.
         # --------------------------------------------------
         if self.log_scaling:
-            bscan_base = torch.log1p(bscan_pos)
+            bscan_base = torch.log1p(bscan) #if the file with scaling is none or is it with ??????????
         else:
-            bscan_base = bscan_pos / self.scale
+            bscan_base = bscan / self.scale
 
         # --------------------------------------------------
         # No derivative channels: repeat base image to 3 channels.
