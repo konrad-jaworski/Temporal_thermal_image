@@ -31,6 +31,7 @@ class BScanDepthDataset(Dataset):
         transform=None,
         dtype=torch.float32,
         normalization_path=None,
+        projection_mode=None, # 'log1p','cos'
         derivative_mode=None,  # None, 'time', 'space', 'phase', 'phase_cos'
         cooling_phase=True,
         cooling_frame=11,
@@ -139,6 +140,7 @@ class BScanDepthDataset(Dataset):
         self.cooling_frame = cooling_frame
         self.log_scaling = log_scaling
         self.eps = eps
+        self.projection_mode=projection_mode
 
         allowed_modes = [None, "time", "space", "phase", "phase_cos"]
         if self.derivative_mode not in allowed_modes:
@@ -153,6 +155,7 @@ class BScanDepthDataset(Dataset):
                 raise KeyError("Normalization file must contain key 'scale'.")
             
             self.scale = float(config["scale"]) # Only temperature scale is implemented
+            self.scale_log1p=float(config["scale_log1p"])
             self._check_scale(self.scale, "scale")
 
         if self.derivative_mode in ["time", "space"]:
@@ -263,10 +266,18 @@ class BScanDepthDataset(Dataset):
         # If log_scaling=False:
         #     raw positive temperature rise is divided by global scale.
         # --------------------------------------------------
-        if self.log_scaling:
-            bscan_base = torch.log1p(bscan) #if the file with scaling is none or is it with ??????????
-        else:
+
+
+        if self.projection_mode==None:
             bscan_base = bscan / self.scale
+        elif self.projection_mode=='log1p':
+            bscan_base = torch.log1p(bscan)/self.scale_log1p
+        elif self.projection_mode=='cos':
+            bscan_base=(torch.cos(bscan)+1)/2  # Here we do not have anythig to normalize since cosine already produce values from -1 to 1 we just use common scale for every case
+        else:
+            raise ValueError(
+                    f"Invalid projection mode!"
+                )
 
         # --------------------------------------------------
         # No derivative channels: repeat base image to 3 channels.
@@ -281,7 +292,7 @@ class BScanDepthDataset(Dataset):
             return x.float(), depth.float() # it ends here if we would not investigate any channel augmentation.
 
         # --------------------------------------------------
-        # Additional channels.
+        # Additional channels, in current version not used.
         # --------------------------------------------------
         if self.derivative_mode == "time":
             # Signed derivatives from raw positive baseline-removed data.
