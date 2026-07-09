@@ -6,18 +6,15 @@ from tqdm import tqdm
 from helper_functions import d1_dy, d2_dx2, d1_dx, d2_dy2
 
 
-train_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Open_Source_Dataset/open_source_data_npz_rb/*.npz"
+train_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb/*.npz"
 files = sorted(glob.glob(train_folder))
 
 # =========================================================
 # Configuration
 # =========================================================
-log_scaling = False
-
 use_cooling_only = True
-cooling_frame = 11
-
-compute_derivative_scales = True
+cooling_frame = 250
+compute_derivative_scales = False
 
 # ---------------------------------------------------------
 # Output file depends on whether the scale is computed from
@@ -321,7 +318,6 @@ np.savez(
     # -----------------------------------------------------
     # Metadata
     # -----------------------------------------------------
-    log_scaling=log_scaling,
     use_cooling_only=use_cooling_only,
     cooling_frame=cooling_frame,
     sequence_mode=sequence_mode,

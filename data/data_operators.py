@@ -35,7 +35,6 @@ class BScanDepthDataset(Dataset):
         derivative_mode=None,  # None, 'time', 'space', 'phase', 'phase_cos'
         cooling_phase=True,
         cooling_frame=11,
-        log_scaling=True,
         resize_size=512,
         eps=1e-8,
     ):
@@ -138,7 +137,6 @@ class BScanDepthDataset(Dataset):
         self.derivative_mode = derivative_mode
         self.cooling_phase = cooling_phase
         self.cooling_frame = cooling_frame
-        self.log_scaling = log_scaling
         self.eps = eps
         self.projection_mode=projection_mode
 

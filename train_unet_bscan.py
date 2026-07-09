@@ -11,7 +11,7 @@ from tqdm import tqdm
 from helper_functions.helper_functions import HorizontalShift,NoiseAdditionExperiment,RandomHorizontalFlipBscan
 from data.data_operators import BScanDepthDataset, ComposeBScanTransforms
 
-from networks.Unets import BnetSmallKernelSmarterRefine,BnetSmallKernelSmarter,BnetSmallKernel,BnetSum,BnetMean
+from networks.Unets import BnetSmallKernelSmarterRefine,BnetSmallKernelSmarter,BnetSmallKernel,BnetMean
 
 
 # -------------------------
@@ -51,11 +51,18 @@ pin_memory = (device.type == "cuda")
 # Transforms
 # -------------------------
 train_transforms = ComposeBScanTransforms([
-    NoiseAdditionExperiment(), # Detectore wise noise addition, for experimental data we remove it
+    NoiseAdditionExperiment(sigma=0.65), # Detectore wise noise addition, for experimental data we remove it
     RandomHorizontalFlipBscan(p=0.2), # keep as abseline invariance
     HorizontalShift(p=0.2),  # keep as baseline invariance
 ])
 
+val_transforms=ComposeBScanTransforms([NoiseAdditionExperiment(sigma=0.65)])
+
+# Data loaders configuration
+projection_mode=None
+cooling_phase=False
+derivative_mode=None
+normalization_path="/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/helper_functions/normalization_params_heating_and_cooling.npz"
 # -------------------------
 # Datasets
 # -------------------------
@@ -63,20 +70,20 @@ train_dataset = BScanDepthDataset(
     bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb/training_bscans",
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb/training_masks",
     transform=train_transforms,
-    normalization_path=None,
-    derivative_mode=None,
-    log_scaling=True,
-    cooling_phase=False
+    normalization_path=normalization_path,
+    derivative_mode=derivative_mode,
+    projection_mode=projection_mode,
+    cooling_phase=cooling_phase
 )
 
-val_dataset_clean = BScanDepthDataset(
-    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_rb/validation_bscan",
-    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_rb/validation_mask",
-    transform=None,
-    normalization_path=None,
-    derivative_mode=None,
-    log_scaling=True,
-    cooling_phase=False
+val_dataset = BScanDepthDataset(
+    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_rb/validation_bscans",
+    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_rb/validation_masks",
+    transform=val_transforms,
+    normalization_path=normalization_path,
+    derivative_mode=derivative_mode,
+    projection_mode=projection_mode,
+    cooling_phase=cooling_phase
 )
 
 # -------------------------
@@ -97,7 +104,7 @@ train_loader = DataLoader(
 )
 
 val_loader_clean = DataLoader(
-    val_dataset_clean,
+    val_dataset,
     batch_size=16,
     shuffle=False,
     num_workers=24,
@@ -111,49 +118,32 @@ val_loader_clean = DataLoader(
 # Model / loss / optimizer
 # -------------------------
 
-model = BnetMean().to(device)
+models=[BnetMean(),BnetSmallKernel(),BnetSmallKernelSmarter(),BnetSmallKernelSmarterRefine()]
+models_names=['Bnet_mean','Bnet_Projection','Bnet_Deeper_regression','Bnet_refined']
 
 # MSE loss (Stage 1 baseline)
 criterion = nn.MSELoss()
-
-optimizer = optim.Adam(model.parameters(), lr=1e-4) 
 
 # Optional: stable training if you see spikes
 GRAD_CLIP_NORM = 1.0  # set e.g. 1.0 if needed
 
 # -------------------------
-# Save paths
-# -------------------------
-main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/Model_performance_CFRP_sim_exp_publication"
-model_name = "bnet_mean"
-model_dir = os.path.join(main_path, model_name)
-os.makedirs(model_dir, exist_ok=True)
-
-best_path = os.path.join(model_dir, "best_model_clean.pth")
-last_path = os.path.join(model_dir, "last_model.pth")
-
-
-# -------------------------
 # Training config
 # -------------------------
-num_epochs = 500
-best_clean_loss = float("inf")
-
+num_epochs = 1
 patience = 30 
 min_delta = 1e-5
-counter = 0
-
-train_log = []
-val_clean_log = []
-
+# Learning rate
+lr=1e-4
 
 # -------------------------
 # Eval helper
 # -------------------------
-def evaluate(loader):
+def evaluate(model, loader):
     model.eval()
     total = 0.0
     n = 0
+
     with torch.no_grad():
         for bscan, depth in loader:
             bscan = bscan.to(device, non_blocking=True)
@@ -165,81 +155,137 @@ def evaluate(loader):
             bs = bscan.size(0)
             total += loss.item() * bs
             n += bs
+
     return total / max(1, n)
 
 
 # -------------------------
-# Training loop
+# Train all models one by one
 # -------------------------
-for epoch in tqdm(range(num_epochs), desc="Epochs", leave=False):
-    model.train()
-    running_loss = 0.0
+for i in range(4):
 
-    for bscan, depth in tqdm(train_loader, desc=f"Epoch {epoch+1} Train", leave=False):
-        bscan = bscan.to(device, non_blocking=True)
-        depth = depth.to(device, non_blocking=True)
+    model = models[i].to(device)
+    model_name = models_names[i]
 
-        optimizer.zero_grad(set_to_none=True)
-        
-        output = model(bscan)
-        loss = criterion(output, depth)
-        
-        loss.backward()
+    print("\n" + "=" * 80)
+    print(f"Training model {i+1}/4: {model_name}")
+    print("=" * 80)
 
-        if GRAD_CLIP_NORM is not None:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), GRAD_CLIP_NORM)
+    optimizer = optim.Adam(model.parameters(), lr=lr)
 
-        optimizer.step()
-        running_loss += loss.item() * bscan.size(0)
+    # IMPORTANT:
+    # This must be reset for every model.
+    best_clean_loss = float("inf")
+    counter = 0
 
-    train_epoch_loss = running_loss / len(train_loader.dataset)
-    train_log.append(train_epoch_loss)
+    train_log = []
+    val_clean_log = []
 
-    # ---- Validation pass ----
-    clean_loss = evaluate(val_loader_clean)
-    val_clean_log.append(clean_loss)
+    # -------------------------
+    # Save paths
+    # -------------------------
+    main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/Model_performance_CFRP_sim_exp_publication"
 
-    print(
-        f"Epoch [{epoch+1}/{num_epochs}] "
-        f"Train: {train_epoch_loss:.6f} | "
-        f"Val(clean): {clean_loss:.6f}"
-    )
+    model_dir = os.path.join(main_path, model_name)
+    os.makedirs(model_dir, exist_ok=True)
 
-    # always save last
-    torch.save(model.state_dict(), last_path)
+    best_path = os.path.join(model_dir, "best_model_clean.pth")
+    last_path = os.path.join(model_dir, "last_model.pth")
 
-    # early stopping + best checkpoint ONLY on clean val
-    if clean_loss < best_clean_loss - min_delta:
-        best_clean_loss = clean_loss
-        counter = 0
-        torch.save(model.state_dict(), best_path)
-        print(f"Saved BEST (clean) model: {best_clean_loss:.6f} -> {best_path}")
-    else:
-        counter += 1
+    # -------------------------
+    # Training loop
+    # -------------------------
+    for epoch in tqdm(range(num_epochs), desc=f"{model_name} epochs", leave=False):
+        model.train()
+        running_loss = 0.0
 
-    if counter >= patience:
-        print("Early stopping triggered (based on clean validation).")
-        break
+        for bscan, depth in tqdm(
+            train_loader,
+            desc=f"{model_name} | Epoch {epoch+1} Train",
+            leave=False
+        ):
+            bscan = bscan.to(device, non_blocking=True)
+            depth = depth.to(device, non_blocking=True)
 
+            optimizer.zero_grad(set_to_none=True)
 
-# -------------------------
-# Save logs + run config
-# -------------------------
-torch.save(train_log, os.path.join(model_dir, "train_log.pt"))
-torch.save(val_clean_log, os.path.join(model_dir, "val_clean_log.pt"))
+            output = model(bscan)
+            loss = criterion(output, depth)
 
-# Save meta so you can reproduce the run exactly
-run_config = {
-    "seed": SEED,
-    "batch_size": 16,
-    "num_workers": 24,
-    "lr": 1e-4,
-    "loss": "MSE",
-    "channels": "repeated",
-    "derivative_mode": "none",
-    "Model":"smartnet refine",
-    "patience": patience
-}
-torch.save(run_config, os.path.join(model_dir, "run_config.pt"))
+            loss.backward()
 
-print("Saved logs + checkpoints in:", model_dir)
+            if GRAD_CLIP_NORM is not None:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), GRAD_CLIP_NORM)
+
+            optimizer.step()
+
+            running_loss += loss.item() * bscan.size(0)
+
+        train_epoch_loss = running_loss / len(train_loader.dataset)
+        train_log.append(train_epoch_loss)
+
+        # ---- Validation pass ----
+        clean_loss = evaluate(model, val_loader_clean)
+        val_clean_log.append(clean_loss)
+
+        print(
+            f"{model_name} | "
+            f"Epoch [{epoch+1}/{num_epochs}] | "
+            f"Train: {train_epoch_loss:.6f} | "
+            f"Val(clean): {clean_loss:.6f}"
+        )
+
+        # Always save last
+        torch.save(model.state_dict(), last_path)
+
+        # Early stopping + best checkpoint
+        if clean_loss < best_clean_loss - min_delta:
+            best_clean_loss = clean_loss
+            counter = 0
+
+            torch.save(model.state_dict(), best_path)
+
+            print(
+                f"Saved BEST model for {model_name}: "
+                f"{best_clean_loss:.6f} -> {best_path}"
+            )
+        else:
+            counter += 1
+
+        if counter >= patience:
+            print(f"Early stopping triggered for {model_name}.")
+            break
+
+    # -------------------------
+    # Save logs + run config
+    # -------------------------
+    torch.save(train_log, os.path.join(model_dir, "train_log.pt"))
+    torch.save(val_clean_log, os.path.join(model_dir, "val_clean_log.pt"))
+
+    run_config = {
+        "seed": SEED,
+        "batch_size": 16,
+        "num_workers": 24,
+        "lr": lr,
+        "loss": "MSE",
+        "channels": "repeated",
+        "projection_mode": projection_mode,
+        "derivative_mode": derivative_mode,
+        "cooling_phase?":cooling_phase,
+        "model": model_name,
+        "patience": patience,
+        "min_delta": min_delta,
+        "grad_clip_norm": GRAD_CLIP_NORM,
+        "best_clean_loss": best_clean_loss,
+    }
+
+    torch.save(run_config, os.path.join(model_dir, "run_config.pt"))
+
+    print(f"Saved logs + checkpoints in: {model_dir}")
+
+    # Move previous model to CPU and clear CUDA cache
+    model = model.to("cpu")
+    del optimizer
+
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
