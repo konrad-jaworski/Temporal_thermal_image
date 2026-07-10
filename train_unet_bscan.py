@@ -130,7 +130,7 @@ GRAD_CLIP_NORM = 1.0  # set e.g. 1.0 if needed
 # -------------------------
 # Training config
 # -------------------------
-num_epochs = 1
+num_epochs = 500
 patience = 30 
 min_delta = 1e-5
 # Learning rate
