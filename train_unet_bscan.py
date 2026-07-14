@@ -73,17 +73,19 @@ train_dataset = BScanDepthDataset(
     normalization_path=normalization_path,
     derivative_mode=derivative_mode,
     projection_mode=projection_mode,
-    cooling_phase=cooling_phase
+    cooling_phase=cooling_phase,
+    cooling_frame=250
 )
 
 val_dataset = BScanDepthDataset(
     bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_rb/validation_bscans",
     depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_rb/validation_masks",
-    transform=val_transforms,
+    transform=None,
     normalization_path=normalization_path,
     derivative_mode=derivative_mode,
     projection_mode=projection_mode,
-    cooling_phase=cooling_phase
+    cooling_phase=cooling_phase,
+    cooling_frame=250
 )
 
 # -------------------------
