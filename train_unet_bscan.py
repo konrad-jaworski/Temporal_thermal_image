@@ -59,7 +59,7 @@ train_transforms = ComposeBScanTransforms([
 val_transforms=ComposeBScanTransforms([NoiseAdditionExperiment(sigma=0.65)])
 
 # Data loaders configuration
-projection_mode=None
+projection_mode='log1p'
 cooling_phase=False
 derivative_mode=None
 normalization_path="/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/helper_functions/normalization_params_heating_and_cooling.npz"
