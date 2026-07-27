@@ -6,13 +6,13 @@ from tqdm import tqdm
 from helper_functions import d1_dy, d2_dx2, d1_dx, d2_dy2
 
 
-train_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb/*.npz"
+train_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb_smaller/*.npz"
 files = sorted(glob.glob(train_folder))
 
 # =========================================================
 # Configuration
 # =========================================================
-use_cooling_only = True
+use_cooling_only = False
 cooling_frame = 250
 compute_derivative_scales = False
 

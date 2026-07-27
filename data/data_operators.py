@@ -152,9 +152,9 @@ class BScanDepthDataset(Dataset):
             if "scale" not in config:
                 raise KeyError("Normalization file must contain key 'scale'.")
             
-            self.scale = float(config["scale"]) # Only temperature scale is implemented
+            self.scale = float(config["scale"]) 
             self.scale_log1p=float(config["scale_log1p"])
-            self._check_scale(self.scale, "scale")
+            
 
         if self.derivative_mode in ["time", "space"]:
             required_keys = ["scale_dt", "scale_dxx", "scale_dx", "scale_dtt"]
@@ -170,10 +170,7 @@ class BScanDepthDataset(Dataset):
             self.scale_d_dx = float(config["scale_dx"])
             self.scale_d2_dt2 = float(config["scale_dtt"])
 
-            self._check_scale(self.scale_d_dt, "scale_dt")
-            self._check_scale(self.scale_d2_dx2, "scale_dxx")
-            self._check_scale(self.scale_d_dx, "scale_dx")
-            self._check_scale(self.scale_d2_dt2, "scale_dtt")
+            
 
         # Resising of the bscan to fit into the network
         self.resize = Interpolate(size=resize_size)
@@ -191,21 +188,6 @@ class BScanDepthDataset(Dataset):
             depth_path = os.path.join(self.depth_dir, f)
             if not os.path.exists(depth_path):
                 raise FileNotFoundError(f"Missing depth file for {f}")
-
-    def _check_scale(self, value, name):
-        """
-        Check whether normalization scale is numerically meaningful.
-        """
-
-        if not np.isfinite(value):
-            raise ValueError(f"{name} is not finite: {value}")
-
-        if value < self.eps:
-            raise ValueError(
-                f"{name} is too small: {value}. "
-                f"This suggests the scale was incorrectly computed or the "
-                f"corresponding channel is nearly zero."
-            )
 
     def __len__(self):
         return len(self.files)

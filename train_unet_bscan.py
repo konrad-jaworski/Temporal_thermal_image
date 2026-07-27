@@ -51,18 +51,16 @@ pin_memory = (device.type == "cuda")
 # Transforms
 # -------------------------
 train_transforms = ComposeBScanTransforms([
-    NoiseAdditionExperiment(sigma=0.65), # Detectore wise noise addition, for experimental data we remove it
+    NoiseAdditionExperiment(sigma=0.065), # Detectore wise noise addition, for experimental data we remove it !!!!!!!!!!!!
     RandomHorizontalFlipBscan(p=0.2), # keep as abseline invariance
     HorizontalShift(p=0.2),  # keep as baseline invariance
 ])
-
-val_transforms=ComposeBScanTransforms([NoiseAdditionExperiment(sigma=0.65)])
 
 # Data loaders configuration
 projection_mode='log1p'
 cooling_phase=False
 derivative_mode=None
-normalization_path="/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/helper_functions/normalization_params_heating_and_cooling.npz"
+normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb/normalization_params_heating_and_cooling.npz"
 # -------------------------
 # Datasets
 # -------------------------
