@@ -57,7 +57,7 @@ train_transforms = ComposeBScanTransforms([
 ])
 
 # Data loaders configuration
-projection_mode=False
+projection_mode=None
 cooling_phase=True
 derivative_mode=None
 normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb/normalization_params_cooling_only.npz"
