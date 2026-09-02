@@ -1,113 +1,186 @@
 import os
-import numpy as np
 import glob
+import numpy as np
+
 
 def extract_rowwise_bscan_and_targets(
     input_folder,
     output_bscan_folder,
     output_depth_folder,
-    lower_bound,
-    upper_bound,
+    lower_bound=0,
+    upper_bound=None,
     trim_width=None,
-    experimental=False
+    experimental=False,
+    scan_direction="rows",
 ):
     """
-    Extract row-wise B-scan data and corresponding targets from .npz files.
+    Extract B-scans from data with shape [T, H, W].
 
-    For each row index i in [lower_bound, upper_bound):
-      - Save data[:, i, :] as one training sample
-      - Save mask[i] * depth_factor as regression target
+    scan_direction="rows":
+        X = data[:, row, :]       -> [T, W]
+        target = mask[row, :]     -> [W]
+
+    scan_direction="columns":
+        X = data[:, :, column]    -> [T, H]
+        target = mask[:, column]  -> [H]
+
+    upper_bound=None processes all available rows or columns.
     """
 
-    # Creation of the specific folders
-    os.makedirs(output_depth_folder, exist_ok=True)
-    os.makedirs(output_bscan_folder, exist_ok=True)
+    if scan_direction not in {"rows", "columns"}:
+        raise ValueError(
+            'scan_direction must be either "rows" or "columns".'
+        )
 
-    # Checking if folder contain npz file
-    files = glob.glob(os.path.join(input_folder, "*.npz"))
+    trim = 0 if trim_width is None else trim_width
+
+    if not isinstance(trim, (int, np.integer)) or trim < 0:
+        raise ValueError(
+            "trim_width must be None or a non-negative integer."
+        )
+
+    files = sorted(glob.glob(os.path.join(input_folder, "*.npz")))
+
     if not files:
         print("No .npz files found!")
         return
 
-    print(f"Processing {len(files)} files...")
+    os.makedirs(output_depth_folder, exist_ok=True)
+    os.makedirs(output_bscan_folder, exist_ok=True)
+
+    required_keys = {"data", "meta"}
+
+    if not experimental:
+        required_keys.add("mask")
+
+    print(
+        f"Processing {len(files)} files along {scan_direction}..."
+    )
 
     sample_counter = 0
 
     for fpath in files:
-        base_name = os.path.basename(fpath).replace(".npz", "")
-        npz = np.load(fpath, allow_pickle=True)
+        base_name = os.path.splitext(os.path.basename(fpath))[0]
 
-
-        if experimental:
-            if not all(k in npz for k in ['data', 'meta']):
-                print(f"Skipping {base_name}: missing required keys")
+        with np.load(fpath, allow_pickle=True) as npz:
+            if not required_keys.issubset(npz.files):
+                print(
+                    f"Skipping {base_name}: missing required keys"
+                )
                 continue
 
-            if trim_width is not None:
-                data=npz['data'][:, :, trim_width:-trim_width]  # Trim width if specified
+            data = npz["data"]
+
+            if experimental:
+                mask = None
             else:
-                data = npz['data']      # [T, H, W]
-            
-            for i in range(lower_bound, upper_bound):
+                mask = npz["mask"]
 
-                # --- Input (B-scan row) ---
-                X = data[:, i, :]                   # [T, W]
+        if data.ndim != 3 or 0 in data.shape:
+            raise ValueError(
+                f"{base_name}: data must have shape [T, H, W]."
+            )
 
-                # --- Classification target ---
-                depth_target = np.zeros_like(X[0,:], dtype=np.float32) # dummy target to learn backgrond , only subset will be selected for training.
+        if mask is not None and mask.shape != data.shape[1:]:
+            raise ValueError(
+                f"{base_name}: mask shape {mask.shape} does not "
+                f"match data spatial shape {data.shape[1:]}."
+            )
 
-                # unique filename per row
-                fname = f"{base_name}_row_{i:04d}"
+        # Remove columns from the left and right sides.
+        if trim:
+            if 2 * trim >= data.shape[2]:
+                raise ValueError(
+                    f"{base_name}: trim_width removes the entire width."
+                )
 
-                np.save(os.path.join(output_bscan_folder, fname + ".npy"), X)
-                np.save(os.path.join(output_depth_folder, fname + ".npy"), depth_target)
+            data = data[:, :, trim:-trim]
 
-                sample_counter += 1
-        else:    
-            if not all(k in npz for k in ['data', 'mask', 'meta']):
-                print(f"Skipping {base_name}: missing required keys")
-                continue
+            if mask is not None:
+                mask = mask[:, trim:-trim]
 
-        
-            if trim_width is not None:
-                data=npz['data'][:, :, trim_width:-trim_width]  # Trim width if specified
-                mask=npz['mask'][:,trim_width:-trim_width]  # Mask width is also trimmed accordingly
+        # Axis 1 contains rows; axis 2 contains columns.
+        scan_axis = 1 if scan_direction == "rows" else 2
+        number_of_scans = data.shape[scan_axis]
+
+        stop = (
+            number_of_scans
+            if upper_bound is None
+            else upper_bound
+        )
+
+        if not 0 <= lower_bound < stop <= number_of_scans:
+            raise ValueError(
+                f"{base_name}: bounds must satisfy "
+                f"0 <= lower_bound < upper_bound <= "
+                f"{number_of_scans}."
+            )
+
+        for i in range(lower_bound, stop):
+
+            if scan_direction == "rows":
+                X = data[:, i, :]       # [T, W]
+                target = (
+                    None
+                    if experimental
+                    else mask[i, :]
+                )
+                label = "row"
+
             else:
-                data = npz['data']      # [T, H, W]
-                mask = npz['mask']      # [H]
-            
-            for i in range(lower_bound, upper_bound):
+                X = data[:, :, i]       # [T, H]
+                target = (
+                    None
+                    if experimental
+                    else mask[:, i]
+                )
+                label = "col"
 
-                # --- Input (B-scan row) ---
-                X = data[:, i, :]                   # [T, W]
+            if experimental:
+                depth_target = np.zeros(
+                    X.shape[1],
+                    dtype=np.float32,
+                )
+            else:
+                depth_target = np.asarray(
+                    target,
+                    dtype=np.float32,
+                )
 
-                # --- Classification target ---
-                depth_target = np.array(mask[i], dtype=np.float32)
+            fname = f"{base_name}_{label}_{i:04d}.npy"
 
-                # unique filename per row
-                fname = f"{base_name}_row_{i:04d}"
+            np.save(
+                os.path.join(output_bscan_folder, fname),
+                X,
+            )
 
-                np.save(os.path.join(output_bscan_folder, fname + ".npy"), X)
-                np.save(os.path.join(output_depth_folder, fname + ".npy"), depth_target)
+            np.save(
+                os.path.join(output_depth_folder, fname),
+                depth_target,
+            )
 
-                sample_counter += 1
+            sample_counter += 1
 
-    print(f"Done. Saved {sample_counter} row-wise samples.")
+    print(
+        f"Done. Saved {sample_counter} "
+        f"{scan_direction}-wise samples."
+    )
 
 
-input_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb_smaller"
-output_bscan_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb_smaller/training_bscans"
-output_depth_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb_smaller/training_masks"
+input_folder = r"/home/jaworskj/projects/thermal_B_scan/2026_06_16_badania_CFRP/Calibration_6/Calibration_6_rb"
+output_bscan_folder = r"/home/jaworskj/projects/thermal_B_scan/2026_06_16_badania_CFRP/Calibration_6/Calibration_6_rb/data_bscans"
+output_depth_folder = r"/home/jaworskj/projects/thermal_B_scan/2026_06_16_badania_CFRP/Calibration_6/Calibration_6_rb/data_masks"
 
-lower_bound = 0
-upper_bound = 512
+lower_bound = 250
+upper_bound = 480
 
 extract_rowwise_bscan_and_targets(
     input_folder,
     output_bscan_folder,
     output_depth_folder,
-    lower_bound,
-    upper_bound,
+    lower_bound=lower_bound,
+    upper_bound=upper_bound,
     trim_width=None,
-    experimental=False
+    experimental=True,
+    scan_direction="rows",
 )
