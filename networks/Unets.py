@@ -1,11 +1,57 @@
+"""
+B-net architectures: networks that predict a depth profile from a thermal
+B-scan.
+
+Input:  B-scan x of shape [B, 3, 512, 512]
+        (batch, 3 identical channels, time, position along the scan line).
+Output: depth profile of shape [B, 512], one value per position, in (0, 1)
+        (normalised depth; 0 = no defect).
+
+All variants share the same idea:
+  1. A U-Net (segmentation_models_pytorch, ImageNet-pretrained encoder)
+     turns the B-scan into a feature map [B, C, H, W] of the same size.
+     Here H is the time axis and W the spatial axis.
+  2. The time axis is collapsed, leaving one feature vector per position
+     [B, C, W]. The variants differ in how this is done.
+  3. A 1D head maps every feature vector to one depth value, followed by a
+     sigmoid.
+
+Variants:
+  BnetMean                     - time axis averaged; per-position head.
+  BnetSmallKernel              - time axis compressed by a learned stack of
+                                 vertical convolutions
+                                 (HierarchicalVerticalProjection).
+  BnetSmallKernelSmarter       - as above, with a head that also looks at
+                                 neighbouring positions.
+  BnetSmallKernelSmarterRefine - as above, plus a residual 1D refinement of
+                                 the predicted profile.
+"""
+
 import torch
 import torch.nn as nn
 import segmentation_models_pytorch as smp
-import torch.nn.functional as F 
-from torchvision.models import swin_t, Swin_T_Weights
-import math
 
 class BnetMean(nn.Module):
+    """
+    Simplest B-net: U-Net features averaged over time, then a per-position
+    regression.
+
+    Parameters
+    ----------
+    encoder_name : str
+        Encoder of the U-Net, any name supported by
+        segmentation_models_pytorch (default ResNet-34).
+    encoder_weights : str or None
+        Pretrained weights of the encoder ("imagenet" or None).
+    in_channels : int
+        Number of input channels (3, the B-scan is repeated to match the
+        pretrained encoder).
+    decoder_channels : int
+        Number of feature channels C produced by the U-Net for every pixel.
+    output_width : int
+        Width of the predicted profile. Stored only; the output width is
+        set by the input width.
+    """
     def __init__(
         self,
         encoder_name="resnet34",
@@ -16,23 +62,24 @@ class BnetMean(nn.Module):
     ):
         super().__init__()
 
-        # --- U-Net backbone ---
+        # The U-Net is used as a feature extractor, not as a segmentation
+        # network: its output "classes" are decoder_channels feature maps at
+        # full input resolution, without an activation.
         self.unet = smp.Unet(
             encoder_name=encoder_name,
             encoder_weights=encoder_weights,
             in_channels=in_channels,
-            classes=decoder_channels,  # feature maps, not final output
+            classes=decoder_channels,
             activation=None
         )
 
-        # --- Column-wise regression head ---
+        # Kernel size 1 in a Conv1d means the same small MLP
+        # (C -> 128 -> 1) is applied to every position independently.
         self.regressor = nn.Sequential(
             nn.Conv1d(decoder_channels, 128, kernel_size=1),
             nn.ReLU(inplace=True),
             nn.Conv1d(128, 1, kernel_size=1)
         )
-
-        self.output_width = output_width
 
     def forward(self, x):
         """
@@ -40,81 +87,45 @@ class BnetMean(nn.Module):
         return: [B, 512]
         """
 
-        # U-Net output: [B, C, H, W]
-        feat = self.unet(x)
+        feat = self.unet(x)          # [B, C, H, W]
 
-        # Pool over height (H)
-        feat = feat.mean(dim=2)  # [B, C, W]
+        # Average over the time axis: each position keeps the mean of its
+        # features over the whole sequence.
+        feat = feat.mean(dim=2)      # [B, C, W]
 
-        # Regress per column
-        out = self.regressor(feat)  # [B, 1, W]
+        out = self.regressor(feat)   # [B, 1, W]
 
-        out = out.squeeze(1)  # [B, W]
+        out = out.squeeze(1)         # [B, W]
 
-        # Optional: enforce [0,1]
+        # Sigmoid keeps the prediction in (0, 1), the range of the
+        # normalised depth targets.
         out = torch.sigmoid(out)
 
         return out
-    
-class BnetSum(nn.Module):
-    def __init__(
-        self,
-        encoder_name="resnet34",
-        encoder_weights="imagenet",
-        in_channels=3,
-        decoder_channels=256,
-        output_width=512
-    ):
-        super().__init__()
 
-        # --- U-Net backbone ---
-        self.unet = smp.Unet(
-            encoder_name=encoder_name,
-            encoder_weights=encoder_weights,
-            in_channels=in_channels,
-            classes=decoder_channels,  # feature maps, not final output
-            activation=None
-        )
 
-        # --- Column-wise regression head ---
-        self.regressor = nn.Sequential(
-            nn.Conv1d(decoder_channels, 128, kernel_size=1),
-            nn.ReLU(inplace=True),
-            nn.Conv1d(128, 1, kernel_size=1)
-        )
-
-        self.output_width = output_width
-
-    def forward(self, x):
-        """
-        x: [B, 3, 512, 512]
-        return: [B, 512]
-        """
-
-        # U-Net output: [B, C, H, W]
-        feat = self.unet(x)
-
-        # Pool over height (H)
-        feat = feat.sum(dim=2)  # [B, C, W]
-
-        # Regress per column
-        out = self.regressor(feat)  # [B, 1, W]
-
-        out = out.squeeze(1)  # [B, W]
-
-        # Optional: enforce [0,1]
-        out = torch.sigmoid(out)
-
-        return out
 
 class HierarchicalVerticalProjection(nn.Module):
     """
-    Gradually compresses height dimension using
-    stacked vertical convolutions with non-linearity.
+    Learned compression of the time axis of a feature map to length 1.
+
+    Instead of simply averaging over time, four convolutions with a tall,
+    one-pixel-wide kernel (15 x 1) and stride 2 along time halve the time
+    axis step by step:
+        512 -> 256 -> 128 -> 64 -> 32
+    A last convolution with a 32 x 1 kernel then combines the remaining 32
+    time steps into one value, with learned weights. Each position (column)
+    is processed on its own (kernel width 1), so no information is mixed
+    between positions here; that is already done by the U-Net.
+
+    Because of the fixed 32 x 1 kernel at the end, the input height must be
+    512 (512 / 2^4 = 32).
     """
     def __init__(self, channels):
         super().__init__()
 
+        # padding=(7, 0) with a 15-tall kernel and stride 2 gives exactly
+        # half the height at each step.
         self.net = nn.Sequential(
             nn.Conv2d(channels, channels, kernel_size=(15, 1), stride=(2, 1), padding=(7, 0)),
             nn.BatchNorm2d(channels),
@@ -132,16 +143,22 @@ class HierarchicalVerticalProjection(nn.Module):
             nn.BatchNorm2d(channels),
             nn.ReLU(inplace=True),
 
-            # Final collapse to height = 1
+            # Height 32 -> 1.
             nn.Conv2d(channels, channels, kernel_size=(32, 1))
         )
 
     def forward(self, x):
-        # x: [B, C, H, W]
-        x = self.net(x)       # [B, C, 1, W]
-        return x.squeeze(2)  # [B, C, W]
+        x = self.net(x)       # [B, C, H, W] -> [B, C, 1, W]
+        return x.squeeze(2)   # [B, C, W]
 
 class BnetSmallKernel(nn.Module):
+    """
+    B-net with a learned time compression (HierarchicalVerticalProjection)
+    in place of the plain mean used in BnetMean. The head is the same
+    per-position MLP.
+
+    Parameters are the same as for BnetMean (without output_width).
+    """
     def __init__(
         self,
         encoder_name="resnet34",
@@ -168,14 +185,24 @@ class BnetSmallKernel(nn.Module):
         )
 
     def forward(self, x):
-        feat = self.unet(x)           # [B, C, H, W]
+        feat = self.unet(x)              # [B, C, H, W]
         feat = self.vertical_proj(feat)  # [B, C, W]
-        out = self.regressor(feat)    # [B, 1, W]
-        out = torch.sigmoid(out.squeeze(1))
+        out = self.regressor(feat)       # [B, 1, W]
+        out = torch.sigmoid(out.squeeze(1))   # [B, W]
 
         return out
-    
+
 class BnetSmallKernelSmarter(nn.Module):
+    """
+    BnetSmallKernel with a larger regression head.
+
+    The first two layers of the head use kernel size 3, so the depth at each
+    position also depends on its neighbours (receptive field of 5
+    positions). This helps to give a smooth, consistent depth across a
+    defect. Batch normalisation after the first layer stabilises training.
+
+    Parameters are the same as for BnetSmallKernel.
+    """
     def __init__(
         self,
         encoder_name="resnet34",
@@ -195,6 +222,7 @@ class BnetSmallKernelSmarter(nn.Module):
 
         self.vertical_proj = HierarchicalVerticalProjection(decoder_channels)
 
+        # padding=1 with kernel 3 keeps the width unchanged.
         self.regressor_smarter = nn.Sequential(
             nn.Conv1d(decoder_channels, 128, kernel_size=3, padding=1),
             nn.BatchNorm1d(128),
@@ -205,31 +233,50 @@ class BnetSmallKernelSmarter(nn.Module):
         )
 
     def forward(self, x):
-        feat = self.unet(x)           # [B, C, H, W]
-        feat = self.vertical_proj(feat)  # [B, C, W]
-        out=self.regressor_smarter(feat) # [B, 1, W]
-        out = torch.sigmoid(out.squeeze(1))
+        feat = self.unet(x)                # [B, C, H, W]
+        feat = self.vertical_proj(feat)    # [B, C, W]
+        out=self.regressor_smarter(feat)   # [B, 1, W]
+        out = torch.sigmoid(out.squeeze(1))   # [B, W]
 
         return out
-    
+
 class Refinement1D(nn.Module):
+    """
+    Small 1D CNN that works on a predicted depth profile [B, W] and returns
+    a correction of the same shape.
+
+    Three convolutions with kernel size 5 give each output a view of 13
+    neighbouring positions, enough to correct local errors such as noisy
+    values inside a defect or blurred defect edges.
+    """
     def __init__(self):
         super().__init__()
+        # Kernel size 5 is used; 9 and 17 were also tested.
         self.net = nn.Sequential(
-            nn.Conv1d(1, 16, kernel_size=5, padding=2), # Normally a 9 was tested 5 and 17
+            nn.Conv1d(1, 16, kernel_size=5, padding=2),
             nn.ReLU(),
-            nn.Conv1d(16, 16, kernel_size=5, padding=2), # Same 
+            nn.Conv1d(16, 16, kernel_size=5, padding=2),
             nn.ReLU(),
-            nn.Conv1d(16, 1, kernel_size=5, padding=2), # same
+            nn.Conv1d(16, 1, kernel_size=5, padding=2),
         )
 
     def forward(self, x):
-        x = x.unsqueeze(1)   # [B, 1, W]
-        x = self.net(x)
-        return x.squeeze(1)
+        x = x.unsqueeze(1)   # [B, W] -> [B, 1, W]
+        x = self.net(x)      # [B, 1, W]
+        return x.squeeze(1)  # [B, W]
 
 
 class BnetSmallKernelSmarterRefine(nn.Module):
+    """
+    BnetSmallKernelSmarter followed by a residual refinement step.
+
+    The head first gives a coarse profile. Refinement1D predicts a
+    correction, which is added to it (residual connection), and the sigmoid
+    is applied only to the sum. The refinement therefore only has to learn
+    the difference from the coarse prediction, not the whole profile.
+
+    Parameters are the same as for BnetSmallKernel.
+    """
     def __init__(
         self,
         encoder_name="resnet34",
@@ -261,186 +308,13 @@ class BnetSmallKernelSmarterRefine(nn.Module):
         self.refinement=Refinement1D()
 
     def forward(self, x):
-        feat = self.unet(x)           # [B, C, H, W]
-        feat = self.vertical_proj(feat)  # [B, C, W]
+        feat = self.unet(x)                                # [B, C, H, W]
+        feat = self.vertical_proj(feat)                    # [B, C, W]
+        # The coarse profile is kept before the sigmoid (logits), so the
+        # correction is added in the unbounded space.
         coarse = self.regressor_smarter(feat).squeeze(1)   # [B, W]
         delta = self.refinement(coarse)                    # [B, W]
         out = coarse + delta
         out = torch.sigmoid(out)
 
         return out
-
-    
-class SwinFeatureEncoder(nn.Module):
-    """Pretrained Swin-T features at four spatial resolutions."""
-
-    def __init__(self, pretrained=True):
-        super().__init__()
-
-        backbone = swin_t(
-            weights=Swin_T_Weights.DEFAULT if pretrained else None
-        )
-
-        # Retain the feature extractor, not the classification head.
-        self.features = backbone.features
-        self.norm = backbone.norm
-
-    def forward(self, x):
-        outputs = []
-
-        for index, layer in enumerate(self.features):
-            x = layer(x)  # Swin uses (B, H, W, C) internally.
-
-            if index in (1, 3, 5, 7):
-                feature = self.norm(x) if index == 7 else x
-                outputs.append(feature.permute(0, 3, 1, 2))
-
-        return outputs
-
-
-class TemporalAttentionPool(nn.Module):
-    """Project channels and learn which temporal positions to emphasize."""
-
-    def __init__(self, in_channels, hidden_dim):
-        super().__init__()
-
-        self.project = nn.Sequential(
-            nn.Conv2d(in_channels, hidden_dim, kernel_size=1),
-            nn.GELU(),
-        )
-        self.score = nn.Conv2d(hidden_dim, 1, kernel_size=1)
-
-    def forward(self, x):
-        x = self.project(x)                       # (B, D, H, W)
-        weights = torch.softmax(self.score(x), dim=2)
-        return (x * weights).sum(dim=2)          # (B, D, W)
-
-
-class CompactTransformerHead(nn.Module):
-    def __init__(
-        self,
-        hidden_dim=128,
-        num_heads=4,
-        num_layers=2,
-        dropout=0.1,
-    ):
-        super().__init__()
-
-        self.pools = nn.ModuleList([
-            TemporalAttentionPool(channels, hidden_dim)
-            for channels in (96, 192, 384, 768)
-        ])
-
-        self.fuse = nn.Sequential(
-            nn.Conv1d(4 * hidden_dim, hidden_dim, kernel_size=1),
-            nn.GELU(),
-        )
-
-        # Separate construction gives independently initialized layers.
-        self.transformer_layers = nn.ModuleList([
-            nn.TransformerEncoderLayer(
-                d_model=hidden_dim,
-                nhead=num_heads,
-                dim_feedforward=2 * hidden_dim,
-                dropout=dropout,
-                activation="gelu",
-                batch_first=True,
-                norm_first=True,
-            )
-            for _ in range(num_layers)
-        ])
-
-        self.norm = nn.LayerNorm(hidden_dim)
-
-        self.regressor = nn.Sequential(
-            nn.Conv1d(hidden_dim, 64, kernel_size=3, padding=1),
-            nn.GELU(),
-            nn.Conv1d(64, 1, kernel_size=1),
-        )
-
-    def positional_encoding(self, length, channels, device, dtype):
-        position = torch.arange(
-            length, device=device, dtype=torch.float32
-        ).unsqueeze(1)
-
-        frequency = torch.exp(
-            torch.arange(0, channels, 2, device=device, dtype=torch.float32)
-            * (-math.log(10000.0) / channels)
-        )
-
-        encoding = torch.zeros(length, channels, device=device)
-        encoding[:, 0::2] = torch.sin(position * frequency)
-        encoding[:, 1::2] = torch.cos(
-            position * frequency[:channels // 2]
-        )
-
-        return encoding.unsqueeze(0).to(dtype=dtype)
-
-    def forward(self, features, output_width):
-        target_width = features[0].shape[-1]
-
-        pooled = []
-        for pool, feature in zip(self.pools, features):
-            x = pool(feature)
-            x = F.interpolate(
-                x,
-                size=target_width,
-                mode="linear",
-                align_corners=False,
-            )
-            pooled.append(x)
-
-        x = self.fuse(torch.cat(pooled, dim=1))  # (B, D, W/4)
-        x = x.transpose(1, 2)                   # (B, W/4, D)
-
-        x = x + self.positional_encoding(
-            x.shape[1], x.shape[2], x.device, x.dtype
-        )
-
-        for layer in self.transformer_layers:
-            x = layer(x)
-
-        x = self.norm(x).transpose(1, 2)
-
-        # Restore the original B-scan width before final regression.
-        x = F.interpolate(
-            x,
-            size=output_width,
-            mode="linear",
-            align_corners=False,
-        )
-
-        return torch.sigmoid(self.regressor(x).squeeze(1))
-
-
-class BnetSwinTransformer(nn.Module):
-    """
-    Input:  (B, 3, T, W)
-    Output: (B, W), normalized depth
-
-    Preserves model.unet.encoder for existing freezing logic.
-    """
-
-    def __init__(
-        self,
-        pretrained=False,
-        hidden_dim=128,
-        num_heads=4,
-        num_layers=2,
-        dropout=0.1,
-    ):
-        super().__init__()
-
-        self.unet = nn.Module()
-        self.unet.encoder = SwinFeatureEncoder(pretrained=pretrained)
-
-        self.head = CompactTransformerHead(
-            hidden_dim=hidden_dim,
-            num_heads=num_heads,
-            num_layers=num_layers,
-            dropout=dropout,
-        )
-
-    def forward(self, x):
-        features = self.unet.encoder(x)
-        return self.head(features, output_width=x.shape[-1])

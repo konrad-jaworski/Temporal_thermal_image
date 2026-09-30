@@ -1,14 +1,54 @@
+"""
+Evaluation metrics and error plots for predicted defect depths.
+
+Predictions and ground truth are depth maps in normalised units (fraction of
+the specimen thickness, 0 = sound material). They can be a single depth
+profile [W] from one B-scan, or a 2D map [rows, W] made by stacking the
+profiles of consecutive rows of one specimen.
+
+Only defect pixels (ground truth > 0) are evaluated. Defects cover a small
+part of the specimen, so including the background, which is easy to predict
+as 0, would make the errors look better than they are.
+
+Functions:
+  calculate_errors                  - pixel-wise MAE / MedAE / RMSE over the
+                                      defect pixels.
+  calculate_median_depth_errors     - one depth estimate per defect (median
+                                      prediction in the defect interior),
+                                      then MAE / MedAE / RMSE.
+  plot_signed_errors_by_depth       - histograms of (prediction - GT) for
+                                      each ground-truth depth.
+  calculate_metrics_per_simulation  - calculate_median_depth_errors for every
+                                      test simulation, optionally in mm.
+"""
+
 import numpy as np
 from matplotlib import pyplot as plt
-import torch
-from matplotlib.ticker import MultipleLocator
-from helper_functions.helper_functions import resize_tensor
 from scipy import ndimage as ndi
 from matplotlib.ticker import MultipleLocator, PercentFormatter
 import warnings
 
 def calculate_errors(pred, mask):
-    """Calculate MAE, MedAE, and RMSE only at GT defect pixels."""
+    """
+    Pixel-wise depth errors over the ground-truth defect pixels.
+
+    Parameters
+    ----------
+    pred, mask : np.ndarray or torch.Tensor, same shape
+        Predicted and ground-truth depth.
+
+    Returns
+    -------
+    dict
+        mae   : mean absolute error,
+        medae : median absolute error (less sensitive to a few large
+                errors, e.g. at defect edges),
+        rmse  : root mean squared error (weights large errors more),
+        count : number of defect pixels evaluated.
+        Errors are in the same units as the inputs.
+    """
+    # Accepts both torch tensors (moved to CPU and detached from the graph)
+    # and numpy arrays / lists.
     def to_numpy(x):
         if hasattr(x, "detach"):
             return x.detach().cpu().float().numpy()
@@ -20,7 +60,9 @@ def calculate_errors(pred, mask):
     if pred.shape != mask.shape:
         raise ValueError(f"Shape mismatch: {pred.shape} vs {mask.shape}")
 
-    roi = mask > 0 # We selecte only defect and disregard BG since defect are rather sparse and we could artificially improve the metrics
+    # Evaluate defect pixels only; the background would dominate the pixel
+    # count and lower the errors artificially.
+    roi = mask > 0
 
     if not roi.any():
         raise ValueError("The mask contains no defect pixels.")
@@ -42,48 +84,56 @@ def calculate_median_depth_errors(
     inner_percent=100,
 ):
     """
-    Estimate defect values from progressively smaller interior regions.
+    Defect-level depth error: one depth estimate per defect.
 
-    Steps
-    -----
-    1. Identify connected GT defects.
-    2. Erode each defect by erosion_pixels.
-    3. Keep inner_percent of the remaining pixels, prioritizing pixels
-       furthest from the ORIGINAL defect boundary.
-    4. Calculate the median prediction over those selected pixels.
-    5. Assign that median across the ORIGINAL defect extent.
-    6. Calculate MAE, MedAE, and RMSE over all original GT defect pixels.
+    Close to the edge of a defect the thermal response is blurred by lateral
+    heat diffusion, so the predicted depth there is less reliable than in the
+    middle. This function therefore estimates the depth of each defect from
+    its interior only, and compares that single value with the ground truth:
+
+      1. Find the separate defects in the ground truth (connected groups of
+         non-zero pixels, diagonal neighbours included).
+      2. Remove `erosion_pixels` layers of pixels from the edge of each
+         defect.
+      3. From what is left, keep the `inner_percent` % of pixels that are
+         farthest from the defect edge.
+      4. Take the median prediction over those pixels as the depth of the
+         defect.
+      5. Assign this value to every pixel of the original (not eroded)
+         defect.
+      6. Compute MAE / MedAE / RMSE between these values and the ground
+         truth over all defect pixels, so large defects weigh more than
+         small ones.
 
     Parameters
     ----------
-    pred, mask : matching 1D or 2D arrays / PyTorch tensors
-        For 2D inputs, use one spatial scene.
-    erosion_pixels : int
-        Number of erosion iterations.
+    pred, mask : np.ndarray or torch.Tensor, same shape, 1D or 2D
+        Predicted and ground-truth depth. A 2D input must be one specimen
+        (consecutive rows), so that defects are connected across rows.
+    erosion_pixels : int >= 0
+        Number of pixel layers removed from the defect edge. 0 = no erosion.
     inner_percent : float in [0, 100]
-        Percentage of eroded pixels to retain.
-        100 uses the entire eroded region.
-        0 selects one deepest pixel.
-        At least one pixel is retained per defect.
+        Share of the remaining pixels used for the median (by pixel count).
+        100 uses all of them; 0 uses only the single most central pixel.
+        At least one pixel per defect is always used.
 
     Returns
     -------
     metrics : dict
-        Pixel-weighted errors in the same units as the inputs.
-    median_prediction : ndarray
-        Estimated median assigned across each original GT defect.
-    overlay : uint8 ndarray
-        0 = background
-        1 = excluded GT pixels
-        2 = selected pixels used for median estimation
+        mae, medae, rmse, in the same units as the inputs.
+    median_prediction : np.ndarray
+        Same shape as the input; each defect filled with its estimated
+        depth, 0 elsewhere.
+    overlay : np.ndarray, uint8
+        Map of which pixels were used, for plotting:
+        0 = background, 1 = defect pixel not used for the median,
+        2 = defect pixel used for the median.
 
-    Notes
-    -----
-    If erosion removes a defect, selection falls back to its deepest
-    original pixel(s), preserving every defect in the evaluation.
-
-    Percentage refers to pixel count, not width or height.
-    Equal-distance ties prioritize proximity to the region centroid.
+    If erosion removes a whole (small) defect, the pixels of that defect
+    farthest from its edge are used instead, so every defect is still
+    evaluated; a warning reports how often this happened. Pixels at the same
+    distance from the edge are ordered by their distance to the defect
+    centre.
     """
     def to_numpy(x):
         if hasattr(x, "detach"):
@@ -93,6 +143,7 @@ def calculate_median_depth_errors(
     pred = to_numpy(pred)
     mask = to_numpy(mask)
 
+    # Input checks.
     if pred.shape != mask.shape:
         raise ValueError(f"Shape mismatch: {pred.shape} vs {mask.shape}")
     if pred.ndim not in (1, 2):
@@ -111,6 +162,8 @@ def calculate_median_depth_errors(
     if not roi.any():
         raise ValueError("The mask contains no defect pixels.")
 
+    # Label connected defects. A full 3 x 3 structure (3 in 1D) counts
+    # diagonal neighbours as connected.
     structure = np.ones((3,) * mask.ndim, dtype=bool)
     labels, count = ndi.label(roi, structure=structure)
 
@@ -118,12 +171,16 @@ def calculate_median_depth_errors(
     overlay = np.zeros(mask.shape, dtype=np.uint8)
     overlay[roi] = 1
 
+    # Number of defects that disappeared completely after erosion.
     fallback_count = 0
 
     for label in range(1, count + 1):
         region = labels == label
 
-        # Padding treats locations outside the image as background.
+        # Distance of every defect pixel to the nearest non-defect pixel.
+        # The one-pixel pad makes the image border count as background, so a
+        # defect touching the border is not treated as infinitely deep
+        # inside.
         padded = np.pad(region, 1, mode="constant", constant_values=False)
         crop = (slice(1, -1),) * region.ndim
         distance = ndi.distance_transform_edt(padded)[crop]
@@ -139,6 +196,8 @@ def calculate_median_depth_errors(
             else region.copy()
         )
 
+        # Small defects can vanish after erosion; fall back to their most
+        # central pixel(s).
         if not eroded.any():
             fallback_count += 1
             eroded = region & (distance == distance[region].max())
@@ -149,8 +208,10 @@ def calculate_median_depth_errors(
             int(np.ceil(len(coords) * inner_percent / 100.0)),
         )
 
-        # Primary ranking: greatest distance from the original boundary.
-        # Tie-breaker: closest to the original region's centroid.
+        # Rank the candidate pixels: first by distance from the original
+        # defect edge (largest first), then by distance to the defect centre
+        # (smallest first), then by index so the order is deterministic.
+        # np.lexsort uses the last key as the primary one.
         centroid = np.argwhere(region).mean(axis=0)
         centroid_distance_sq = np.sum((coords - centroid) ** 2, axis=1)
         boundary_distance = distance[tuple(coords.T)]
@@ -169,6 +230,8 @@ def calculate_median_depth_errors(
                 "A selected interior contains non-finite predictions."
             )
 
+        # The median is robust to a few outlying predictions inside the
+        # defect.
         median_prediction[region] = np.median(values)
         overlay[selected_indices] = 2
 
@@ -197,16 +260,30 @@ def plot_signed_errors_by_depth(
     bins=100,
 ):
     """
-    Plot signed error distributions grouped by ground-truth depth.
+    Histograms of the signed error (prediction - ground truth), one panel
+    per ground-truth depth.
 
-    Inputs use fractions: 0.1 = 10%.
-    Error = prediction - ground truth.
-    Reference lines at ±0.10 indicate ±10 percentage points,
-    not relative errors of ±10% of each depth.
+    The sign shows whether defects of a given depth are systematically
+    predicted too deep (positive) or too shallow (negative). Depths are
+    fractions of the thickness (0.1 = 10 %), so the error is in percentage
+    points of the thickness. The red dashed lines at +/-0.10 mark
+    +/-10 percentage points, not +/-10 % of each depth.
+
+    Parameters
+    ----------
+    pred, mask : np.ndarray or torch.Tensor, same shape
+    depth_levels : sequence of float
+        Ground-truth depths to plot; one panel each.
+    tol : float
+        Tolerance used to match mask values to a depth level.
+    bins : int
+        Number of histogram bins.
 
     Returns
     -------
     fig, axes, statistics
+        statistics is a list with, per depth level, the number of pixels
+        and the mean and median signed error.
     """
     def to_numpy(x):
         if hasattr(x, "detach"):
@@ -221,6 +298,8 @@ def plot_signed_errors_by_depth(
     if len(depth_levels) == 0:
         raise ValueError("Provide at least one depth level.")
 
+    # Errors of all pixels whose ground truth equals each depth level
+    # (NaN / inf values are skipped).
     errors_by_depth = [
         pred[selected] - mask[selected]
         for level in depth_levels
@@ -231,7 +310,9 @@ def plot_signed_errors_by_depth(
         ]
     ]
 
-    # Shared limits and bins make the panels comparable.
+    # The same x-range and bins in every panel, so they can be compared.
+    # The range is the largest error rounded up to a multiple of 0.05, and
+    # at least +/-0.15.
     largest_error = max(
         (float(np.max(np.abs(e))) for e in errors_by_depth if e.size),
         default=0.0,
@@ -251,6 +332,7 @@ def plot_signed_errors_by_depth(
     statistics = []
 
     for ax, level, errors in zip(axes, depth_levels, errors_by_depth):
+        # Zero-error line and the +/-10 pp reference lines.
         ax.axvline(0, color="gray", linewidth=1)
         ax.axvline(
             -0.10, color="red", linestyle="--",
@@ -292,6 +374,8 @@ def plot_signed_errors_by_depth(
             "median_signed_error": median,
         })
 
+        # x-axis shown in percent, with ticks every 5 pp; labels are
+        # repeated on every panel even though the axis is shared.
         ax.set_title(f"GT depth: {level:.1f} ({level:.0%})")
         ax.set_ylabel("Pixel count")
         ax.set_xlim(-limit, limit)
@@ -308,8 +392,6 @@ def plot_signed_errors_by_depth(
 
     return fig, axes, statistics
 
-import numpy as np
-
 
 def calculate_metrics_per_simulation(
     pred_all,
@@ -319,18 +401,33 @@ def calculate_metrics_per_simulation(
     thickness_mm=5.0,
 ):
     """
-    Use calculate_median_depth_errors separately for each simulation,
-    with erosion_pixels=1 and inner_percent=100.
+    Defect-level errors for each test simulation separately, and their mean.
 
-    Inputs contain normalized fractions. Set thickness_mm=None to keep
-    those units; otherwise, results are converted to millimetres.
+    The predictions of all test B-scans are stacked row by row: the first
+    `rows_per_sim` rows belong to simulation 1, the next ones to simulation 2,
+    and so on. Each block is evaluated with calculate_median_depth_errors
+    (erosion_pixels=1, inner_percent=100).
+
+    Parameters
+    ----------
+    pred_all, mask_all : np.ndarray or torch.Tensor, [total_rows, W]
+        Stacked predicted and ground-truth depth profiles, normalised.
+    rows_per_sim : int
+        Number of rows (B-scans) per simulation.
+    num_simulations : int
+        Number of simulations; total_rows must equal
+        rows_per_sim * num_simulations.
+    thickness_mm : float or None
+        Specimen thickness. The normalised errors are multiplied by it to
+        give millimetres. None keeps the normalised units.
 
     Returns
     -------
     per_simulation : list of dict
-        MAE, MedAE, and RMSE for each simulation.
+        mae, medae, rmse for every simulation.
     mean_metrics : dict
-        Arithmetic mean of each metric across simulations.
+        Mean of each metric over the simulations (every simulation has the
+        same weight).
     """
     def to_numpy(x):
         if hasattr(x, "detach"):
@@ -352,6 +449,7 @@ def calculate_metrics_per_simulation(
         if not isinstance(value, (int, np.integer)) or value < 1:
             raise ValueError(f"{name} must be a positive integer.")
 
+    # Guards against splitting the stack at the wrong places.
     expected_rows = rows_per_sim * num_simulations
     if pred.shape[0] != expected_rows:
         raise ValueError(
@@ -364,11 +462,13 @@ def calculate_metrics_per_simulation(
         if not np.isfinite(thickness_mm) or thickness_mm <= 0:
             raise ValueError("thickness_mm must be finite and positive.")
 
+    # Normalised depth x thickness = depth in mm.
     scale = 1.0 if thickness_mm is None else thickness_mm
     unit = "" if thickness_mm is None else " mm"
     per_simulation = []
 
     for i in range(num_simulations):
+        # Rows of simulation i.
         start = i * rows_per_sim
         stop = start + rows_per_sim
 
@@ -407,4 +507,3 @@ def calculate_metrics_per_simulation(
     )
 
     return per_simulation, mean_metrics
-

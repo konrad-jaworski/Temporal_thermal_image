@@ -1,3 +1,27 @@
+"""
+Cuts 3D thermal sequences into 2D B-scans and saves them with their depth
+targets, in the format read by BScanDepthDataset (data/data_operators.py).
+
+Input:
+    A folder of .npz files, one per specimen / simulation, each with
+      'data' : thermal sequence [T, H, W] (baseline-removed Delta T),
+      'mask' : depth map [H, W] (0 = sound material, otherwise the defect
+               depth); not needed for experimental data without ground truth.
+
+Output:
+    For every row (or column) of every sequence, two .npy files with the same
+    name, "<sequence>_row_0042.npy" or "<sequence>_col_0042.npy":
+      output_bscan_folder / name : B-scan, [T, W] for rows, [T, H] for columns
+      output_depth_folder / name : depth target, [W] or [H], float32
+
+A B-scan is the temperature along one line of the image followed over time.
+The network predicts the depth profile along that line, so a whole 3D
+sequence becomes H (or W) independent training samples.
+
+The block at the bottom of the file sets the paths and runs the extraction
+when the script is executed.
+"""
+
 import os
 import glob
 import numpy as np
@@ -14,19 +38,41 @@ def extract_rowwise_bscan_and_targets(
     scan_direction="rows",
 ):
     """
-    Extract B-scans from data with shape [T, H, W].
+    Extracts B-scans and depth targets from every .npz file in a folder.
 
-    scan_direction="rows":
-        X = data[:, row, :]       -> [T, W]
-        target = mask[row, :]     -> [W]
+    For scan_direction="rows":
+        X      = data[:, row, :]   -> [T, W]
+        target = mask[row, :]      -> [W]
 
-    scan_direction="columns":
-        X = data[:, :, column]    -> [T, H]
-        target = mask[:, column]  -> [H]
+    For scan_direction="columns":
+        X      = data[:, :, col]   -> [T, H]
+        target = mask[:, col]      -> [H]
 
-    upper_bound=None processes all available rows or columns.
+    Parameters
+    ----------
+    input_folder : str
+        Folder with the .npz sequences.
+    output_bscan_folder, output_depth_folder : str
+        Where the B-scans and the depth targets are written. Created if
+        they do not exist.
+    lower_bound, upper_bound : int, int or None
+        Only rows (or columns) with index in [lower_bound, upper_bound) are
+        extracted. upper_bound=None means up to the last one. The same range
+        is used for every file.
+    trim_width : int or None
+        Number of columns removed from both the left and the right edge of
+        every sequence (and mask) before extraction, e.g. to cut away the
+        specimen border. None or 0 keeps the full width.
+    experimental : bool
+        True for measured data without ground truth. No 'mask' is required
+        and an all-zero target is saved for each B-scan, so the dataset
+        class (which expects a target file for every B-scan) can still load
+        the samples for inference.
+    scan_direction : {"rows", "columns"}
+        Whether B-scans are taken along image rows or image columns.
     """
 
+    # Validate the arguments before any file is read or written.
     if scan_direction not in {"rows", "columns"}:
         raise ValueError(
             'scan_direction must be either "rows" or "columns".'
@@ -39,6 +85,7 @@ def extract_rowwise_bscan_and_targets(
             "trim_width must be None or a non-negative integer."
         )
 
+    # Sorted so the files are always processed in the same order.
     files = sorted(glob.glob(os.path.join(input_folder, "*.npz")))
 
     if not files:
@@ -48,6 +95,8 @@ def extract_rowwise_bscan_and_targets(
     os.makedirs(output_depth_folder, exist_ok=True)
     os.makedirs(output_bscan_folder, exist_ok=True)
 
+    # Simulated data must carry a ground-truth mask; experimental data only
+    # the thermal sequence.
     required_keys = {"data"}
 
     if not experimental:
@@ -60,8 +109,13 @@ def extract_rowwise_bscan_and_targets(
     sample_counter = 0
 
     for fpath in files:
+        # File name without extension; used as prefix of every sample saved
+        # from this sequence, so each B-scan can be traced back to it.
         base_name = os.path.splitext(os.path.basename(fpath))[0]
 
+        # The arrays are read inside the `with` block so the file is closed
+        # right after loading. Files without the required keys are skipped
+        # with a message rather than stopping the whole run.
         with np.load(fpath, allow_pickle=True) as npz:
             if not required_keys.issubset(npz.files):
                 print(
@@ -76,6 +130,8 @@ def extract_rowwise_bscan_and_targets(
             else:
                 mask = npz["mask"]
 
+        # Shape checks: the sequence must be 3D and non-empty, and the mask
+        # must cover exactly the same image area.
         if data.ndim != 3 or 0 in data.shape:
             raise ValueError(
                 f"{base_name}: data must have shape [T, H, W]."
@@ -87,7 +143,9 @@ def extract_rowwise_bscan_and_targets(
                 f"match data spatial shape {data.shape[1:]}."
             )
 
-        # Remove columns from the left and right sides.
+        # Remove `trim` columns on the left and on the right, from the
+        # sequence and the mask alike. Only the width is trimmed, never the
+        # height.
         if trim:
             if 2 * trim >= data.shape[2]:
                 raise ValueError(
@@ -99,7 +157,7 @@ def extract_rowwise_bscan_and_targets(
             if mask is not None:
                 mask = mask[:, trim:-trim]
 
-        # Axis 1 contains rows; axis 2 contains columns.
+        # In data [T, H, W], axis 1 indexes rows and axis 2 indexes columns.
         scan_axis = 1 if scan_direction == "rows" else 2
         number_of_scans = data.shape[scan_axis]
 
@@ -118,6 +176,8 @@ def extract_rowwise_bscan_and_targets(
 
         for i in range(lower_bound, stop):
 
+            # Take one line of the image over all frames, together with the
+            # matching line of the depth mask.
             if scan_direction == "rows":
                 X = data[:, i, :]       # [T, W]
                 target = (
@@ -136,6 +196,8 @@ def extract_rowwise_bscan_and_targets(
                 )
                 label = "col"
 
+            # Placeholder target of zeros for experimental data (see the
+            # `experimental` parameter above).
             if experimental:
                 depth_target = np.zeros(
                     X.shape[1],
@@ -147,8 +209,11 @@ def extract_rowwise_bscan_and_targets(
                     dtype=np.float32,
                 )
 
+            # Zero-padded index so the files sort in scan order.
             fname = f"{base_name}_{label}_{i:04d}.npy"
 
+            # The B-scan is saved in the dtype of the source data; the
+            # dataset class converts it to float32 when loading.
             np.save(
                 os.path.join(output_bscan_folder, fname),
                 X,
@@ -167,6 +232,8 @@ def extract_rowwise_bscan_and_targets(
     )
 
 
+# Paths and settings for the run. The current values cut the test split of
+# the open-source dataset into column-wise B-scans.
 input_folder = r"/home/jaworskj/projects/thermal_B_scan/open_source_dataset/testing"
 output_bscan_folder = r"/home/jaworskj/projects/thermal_B_scan/open_source_dataset/testing/data_bscans_columns"
 output_depth_folder = r"/home/jaworskj/projects/thermal_B_scan/open_source_dataset/testing/data_masks_columns"
