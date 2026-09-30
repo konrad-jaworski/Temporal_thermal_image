@@ -73,8 +73,8 @@ can be downloaded from **[link to be added]**. The package contains:
   validation MSE per epoch) and **run settings** (`run_config.pt`) of every
   model.
 
-The B-scans used for training are not included; they are generated from the
-`.npz` sequences with the scripts below (steps 2 and 3 of Usage).
+Thermal B-scans are not included; they are extracted from the `.npz`
+sequences with the provided code (step 2 of Usage).
 
 In each `.npz` file, `data` is the temperature sequence `[T, H, W]` after
 baseline removal (temperature rise above the initial temperature) and `mask`
@@ -105,27 +105,11 @@ recordings follows the PT-Fusion study (Salah et al., *Sci. Rep.* 16, 12926,
 thermographic signal reconstruction (TSR). Please cite the original dataset
 papers when using these data.
 
-### Folder layout
-
-All scripts are run from the repository root. Unpack the downloaded data so
-that each split sits in its own folder, for example for the experimental
-dataset (the folder `open_source_dataset/` is ignored by git):
-
-```
-open_source_dataset/
-├── training/
-│   ├── *.npz            # original sequences (from the download)
-│   ├── data_bscans/     # created in step 2
-│   └── data_masks/      # created in step 2
-├── validation/          # same structure
-├── testing/             # same structure
-└── trained_models/      # created by the training script
-```
-
 ## Usage
 
-The settings of every script (paths, options) are set at the bottom or top
-of the file; edit them there before running.
+All scripts are run from the repository root. The settings of every script
+(paths, options) are set at the bottom or top of the file; edit them there
+before running.
 
 **1. Baseline removal** (only for raw temperature recordings)
 
