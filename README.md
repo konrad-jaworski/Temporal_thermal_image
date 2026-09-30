@@ -1,9 +1,5 @@
 # B-net: defect depth estimation from thermal B-scans
 
-Code accompanying the paper:
-
-> **[Paper title]**, K. Jaworski *et al.*, *Scientific Reports* (2026). DOI: [to be added]
-
 B-net estimates the depth of subsurface defects from active thermography
 data. Instead of processing the full 3D thermal sequence `[T, H, W]` at once,
 the sequence is cut into **thermal B-scans**: one line of the camera image
