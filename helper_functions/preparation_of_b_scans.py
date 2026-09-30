@@ -48,7 +48,7 @@ def extract_rowwise_bscan_and_targets(
     os.makedirs(output_depth_folder, exist_ok=True)
     os.makedirs(output_bscan_folder, exist_ok=True)
 
-    required_keys = {"data", "meta"}
+    required_keys = {"data"}
 
     if not experimental:
         required_keys.add("mask")
@@ -167,12 +167,12 @@ def extract_rowwise_bscan_and_targets(
     )
 
 
-input_folder = r"/home/jaworskj/projects/thermal_B_scan/2026_06_16_badania_CFRP/Calibration_6/Calibration_6_rb"
-output_bscan_folder = r"/home/jaworskj/projects/thermal_B_scan/2026_06_16_badania_CFRP/Calibration_6/Calibration_6_rb/data_bscans"
-output_depth_folder = r"/home/jaworskj/projects/thermal_B_scan/2026_06_16_badania_CFRP/Calibration_6/Calibration_6_rb/data_masks"
+input_folder = r"/home/jaworskj/projects/thermal_B_scan/open_source_dataset/testing"
+output_bscan_folder = r"/home/jaworskj/projects/thermal_B_scan/open_source_dataset/testing/data_bscans_columns"
+output_depth_folder = r"/home/jaworskj/projects/thermal_B_scan/open_source_dataset/testing/data_masks_columns"
 
-lower_bound = 250
-upper_bound = 480
+lower_bound = 0
+upper_bound = None
 
 extract_rowwise_bscan_and_targets(
     input_folder,
@@ -181,6 +181,6 @@ extract_rowwise_bscan_and_targets(
     lower_bound=lower_bound,
     upper_bound=upper_bound,
     trim_width=None,
-    experimental=True,
-    scan_direction="rows",
+    experimental=False,
+    scan_direction="columns",
 )

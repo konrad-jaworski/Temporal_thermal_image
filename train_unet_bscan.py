@@ -1,125 +1,93 @@
 import os
-import random
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-
 from helper_functions.helper_functions import HorizontalShift,NoiseAdditionExperiment,RandomHorizontalFlipBscan
 from data.data_operators import BScanDepthDataset, ComposeBScanTransforms
-
-from networks.Unets import BnetSmallKernelSmarterRefine,BnetSmallKernelSmarter,BnetSmallKernel,BnetMean
-
-
-# -------------------------
-# Reproducibility
-# -------------------------
-def seed_everything(seed: int = 42, deterministic: bool = False):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-
-    # Ensures deterministic-ish conv behavior (can slow down)
-    if deterministic:
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-        # This enforces deterministic algorithms where possible (may error for some ops)
-        torch.use_deterministic_algorithms(True)
-    else:
-        torch.backends.cudnn.benchmark = True
-
-def seed_worker(worker_id: int):
-    # Make each worker seed deterministic
-    worker_seed = torch.initial_seed() % 2**32
-    np.random.seed(worker_seed)
-    random.seed(worker_seed)
-
-# The steup of experiment
-SEED = 123
-seed_everything(SEED, deterministic=False)
+from networks.Unets import BnetSmallKernelSmarterRefine,BnetSmallKernelSmarter,BnetSmallKernel,BnetMean,BnetSwinTransformer
 
 # The device setup
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 pin_memory = (device.type == "cuda")
 
-
 # -------------------------
 # Transforms
 # -------------------------
 train_transforms = ComposeBScanTransforms([
-    NoiseAdditionExperiment(sigma=0.065), # Detectore wise noise addition, for experimental data we remove it !!!!!!!!!!!!
+    # Detectore wise noise addition, for experimental data we remove it ! NoiseAdditionExperiment(sigma=0.065)
     RandomHorizontalFlipBscan(p=0.2), # keep as abseline invariance
-    HorizontalShift(p=0.2),  # keep as baseline invariance
+    HorizontalShift(p=0.2)  # keep as baseline invariance
 ])
 
 # Data loaders configuration
-projection_mode=None
-cooling_phase=True
-derivative_mode=None
-normalization_path="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb/normalization_params_cooling_only.npz"
+
+cooling_phase=False
+main_path = "/home/jaworskj/projects/thermal_B_scan/open_source_dataset/Model_performance_open_source_publication_fixed_encoder_fixed_lr"
+normalization_path="/home/jaworskj/projects/thermal_B_scan/normalization_params_experimental_cooling_only.npz"
 # -------------------------
 # Datasets
 # -------------------------
 train_dataset = BScanDepthDataset(
-    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb/training_bscans",
-    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb/training_masks",
+    bscan_dir="/home/jaworskj/projects/thermal_B_scan/open_source_dataset/training/data_bscans",
+    depth_dir="/home/jaworskj/projects/thermal_B_scan/open_source_dataset/training/data_masks",
     transform=train_transforms,
     normalization_path=normalization_path,
-    derivative_mode=derivative_mode,
-    projection_mode=projection_mode,
-    cooling_phase=cooling_phase,
-    cooling_frame=250
+    cooling_phase=cooling_phase,   
 )
 
 val_dataset = BScanDepthDataset(
-    bscan_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_rb/validation_bscans",
-    depth_dir="/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/validation_rb/validation_masks",
+    bscan_dir="/home/jaworskj/projects/thermal_B_scan/open_source_dataset/validation/data_bscans",
+    depth_dir="/home/jaworskj/projects/thermal_B_scan/open_source_dataset/validation/data_masks",
     transform=None,
     normalization_path=normalization_path,
-    derivative_mode=derivative_mode,
-    projection_mode=projection_mode,
-    cooling_phase=cooling_phase,
-    cooling_frame=250
+    cooling_phase=cooling_phase
 )
 
 # -------------------------
 # Loaders
 # -------------------------
-g = torch.Generator()
-g.manual_seed(SEED)
-
 train_loader = DataLoader(
     train_dataset,
-    batch_size=16,
-    shuffle=True,
-    num_workers=24,
-    pin_memory=pin_memory,
-    worker_init_fn=seed_worker,
-    generator=g,
-    persistent_workers=True if 24 > 0 else False
+    batch_size=8,
+    shuffle=True
 )
 
 val_loader_clean = DataLoader(
     val_dataset,
-    batch_size=16,
-    shuffle=False,
-    num_workers=24,
-    pin_memory=pin_memory,
-    worker_init_fn=seed_worker,
-    generator=g,
-    persistent_workers=True if 24 > 0 else False
+    batch_size=8,
+    shuffle=False
 )
+
+
+
 
 # -------------------------
 # Model / loss / optimizer
 # -------------------------
 
-models=[BnetMean(),BnetSmallKernel(),BnetSmallKernelSmarter(),BnetSmallKernelSmarterRefine()]
-models_names=['Bnet_mean','Bnet_Projection','Bnet_Deeper_regression','Bnet_refined']
+models = [
+    BnetMean()
+]
+
+models_names = [
+    "Bnet_mean"
+]
+# models = [
+#     BnetSwinTransformer(),
+#     BnetMean(),
+#     BnetSmallKernel(),
+#     BnetSmallKernelSmarter(),
+#     BnetSmallKernelSmarterRefine()
+# ]
+
+# models_names = [
+#     "Bnet_SwinTransformer",
+#     "Bnet_mean",
+#     "Bnet_Projection",
+#     "Bnet_Deeper_regression",
+#     "Bnet_refined",
+# ]
 
 # MSE loss (Stage 1 baseline)
 criterion = nn.MSELoss()
@@ -162,33 +130,43 @@ def evaluate(model, loader):
 # -------------------------
 # Train all models one by one
 # -------------------------
-for i in range(4):
+for i in range(len(models)):
 
     model = models[i].to(device)
     model_name = models_names[i]
 
     print("\n" + "=" * 80)
-    print(f"Training model {i+1}/4: {model_name}")
+    print(f"Training model {i+1}/{len(models)}: {model_name}")
     print("=" * 80)
 
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    # Freeze the pretrained encoder.
+    # for parameter in model.unet.encoder.parameters():
+    #     parameter.requires_grad = False
+    #     parameter.grad = None
 
-    # IMPORTANT:
-    # This must be reset for every model.
+    # optimizer = torch.optim.Adam(
+    #     (p for p in model.parameters() if p.requires_grad),
+    #     lr=lr,
+    # )
+    
+    # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+    #     optimizer,
+    #     T_max=num_epochs,
+    #     eta_min=1e-6,
+    # )
+
+    optimizer=torch.optim.Adam(params=model.parameters(),lr=lr)
+    
     best_clean_loss = float("inf")
     counter = 0
-
     train_log = []
     val_clean_log = []
 
     # -------------------------
     # Save paths
     # -------------------------
-    main_path = "/home/kjaworski/Pulpit/Themporal_thermal_imaging_code/Temporal_thermal_image/Model_performance_CFRP_sim_exp_publication"
-
+    
     model_dir = os.path.join(main_path, model_name)
-    os.makedirs(model_dir, exist_ok=True)
-
     best_path = os.path.join(model_dir, "best_model_clean.pth")
     last_path = os.path.join(model_dir, "last_model.pth")
 
@@ -197,6 +175,9 @@ for i in range(4):
     # -------------------------
     for epoch in tqdm(range(num_epochs), desc=f"{model_name} epochs", leave=False):
         model.train()
+
+        # Depending if we want to train the encoder
+        # model.unet.encoder.eval()
         running_loss = 0.0
 
         for bscan, depth in tqdm(
@@ -252,6 +233,7 @@ for i in range(4):
         else:
             counter += 1
 
+        # scheduler.step()
         if counter >= patience:
             print(f"Early stopping triggered for {model_name}.")
             break
@@ -263,15 +245,9 @@ for i in range(4):
     torch.save(val_clean_log, os.path.join(model_dir, "val_clean_log.pt"))
 
     run_config = {
-        "seed": SEED,
-        "batch_size": 16,
-        "num_workers": 24,
+        "batch_size": 8,
         "lr": lr,
         "loss": "MSE",
-        "channels": "repeated",
-        "projection_mode": projection_mode,
-        "derivative_mode": derivative_mode,
-        "cooling_phase?":cooling_phase,
         "model": model_name,
         "patience": patience,
         "min_delta": min_delta,

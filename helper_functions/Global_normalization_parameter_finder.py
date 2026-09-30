@@ -6,14 +6,14 @@ from tqdm import tqdm
 from helper_functions import d1_dy, d2_dx2, d1_dx, d2_dy2
 
 
-train_folder = r"/home/kjaworski/Pulpit/Temporal_thermal_imaging/Bscan_thermography_dataset/training_rb_smaller/*.npz"
+train_folder = r"/home/jaworskj/projects/thermal_B_scan/open_source_dataset/training/*.npz"
 files = sorted(glob.glob(train_folder))
 
 # =========================================================
 # Configuration
 # =========================================================
-use_cooling_only = False
-cooling_frame = 250
+use_cooling_only = True
+cooling_frame = 0
 compute_derivative_scales = False
 
 # ---------------------------------------------------------
@@ -22,7 +22,7 @@ compute_derivative_scales = False
 # ---------------------------------------------------------
 sequence_mode = "cooling_only" if use_cooling_only else "heating_and_cooling"
 
-output_file = rf"normalization_params_{sequence_mode}.npz"
+output_file = rf"normalization_params_experimental_{sequence_mode}.npz"
 
 print(f"Found {len(files)} training cubes")
 print(f"Mode: {'cooling only' if use_cooling_only else 'heating + cooling / full sequence'}")
