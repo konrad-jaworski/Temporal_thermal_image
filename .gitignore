@@ -1,17 +1,22 @@
+# Python environments and caches
 venv-3.11/
 .venv/
+__pycache__/
+*.pyc
+.python-version
+.ipynb_checkpoints/
+
+# Data, model weights and training logs (not stored in the repository)
+open_source_dataset/
+*.npy
+*.npz
 *.pt
 *.pth
-*.np
-*.npz
-*.pyc
-*.DS_Store
-*.python-version
-__pycache__/
-.ipynb_checkpoints/*
-.python-version
-*.mp4
+
+# Generated figures and videos
 *.png
 *.pdf
-*.gitignore
-*.npy
+*.mp4
+
+# OS files
+.DS_Store
