@@ -1,5 +1,9 @@
 # B-net: defect depth estimation from thermal B-scans
 
+Code accompanying the paper **"Thermal B-scans enable simultaneous
+reconstruction of subsurface defect depth and shape"** by K. Jaworski,
+M. Sobczak and Ł. Pieczonka.
+
 B-net estimates the depth of subsurface defects from active thermography
 data. Instead of processing the full 3D thermal sequence `[T, H, W]` at once,
 the sequence is cut into **thermal B-scans**: one line of the camera image
@@ -32,7 +36,8 @@ Each B-net variant consists of:
 │   ├── Metrics_experimental_data.py       # evaluation metrics and error plots
 │   └── Thermography_tools.py              # TSR fitting, heating-stop detection
 ├── data_generation_scheme.ipynb           # design of the simulated defect layouts
-├── Experimental_data_test.ipynb           # evaluation of a trained model on the test set
+├── Experimental_data_test.ipynb           # evaluation on the experimental (PVC) test set
+├── Simulation_data_val_test.ipynb         # evaluation on the simulated validation and test sets
 └── results_analysis_simulations.ipynb     # comparison of model variants (figures)
 ```
 
@@ -55,28 +60,67 @@ The pretrained ResNet-34 ImageNet weights are downloaded automatically by
 segmentation_models_pytorch the first time a model is created (internet
 access is needed once; the weights are then cached locally).
 
-## Data
+## Data and trained models
 
-The experiments use the open-source dataset described in **[dataset
-reference / DOI to be added]**.
+The data and the trained models are **not stored in this repository**. They
+can be downloaded from **[link to be added]**. The package contains:
 
-All scripts are run from the repository root and expect the data in the
-following layout (the folder `open_source_dataset/` is ignored by git):
+- **3D thermographic sequences** of both datasets, already divided into the
+  training, validation and test splits used in the paper, one `.npz` file per
+  recording,
+- **trained model weights** (`best_model_clean.pth`) of every B-net variant,
+- **training curves** (`train_log.pt`, `val_clean_log.pt`: training and
+  validation MSE per epoch) and **run settings** (`run_config.pt`) of every
+  model.
+
+The B-scans used for training are not included; they are generated from the
+`.npz` sequences with the scripts below (steps 2 and 3 of Usage).
+
+In each `.npz` file, `data` is the temperature sequence `[T, H, W]` after
+baseline removal (temperature rise above the initial temperature) and `mask`
+is the defect depth map `[H, W]`, normalised to the specimen thickness
+(0 = sound material).
+
+### Simulated dataset (CFRP)
+
+Prepared for this study with the FEM software MARC: 20 simulated pulse
+thermography scenes of a carbon-fibre-reinforced polymer plate,
+0.1 × 0.1 m and 3.5 mm thick, with circular flat-bottomed holes of varying
+diameter. Defect depth is defined by the material removed from the rear side,
+from 10 % to 90 % in steps of 5 %. A 5 s heating pulse (45 W halogen lamp) is
+followed by 30 s of cooling, so both the heating and cooling phases are
+available. The scenes are split into 10 training, 5 validation and 5 test
+scenes with **non-overlapping depth levels** (validation: 25, 45, 65, 85 %;
+test: 15, 35, 55, 75 %), which tests generalisation to depths not seen in
+training.
+
+### Experimental dataset (PVC)
+
+The open-source pulsed thermography dataset of Wei et al. (*Appl. Sci.* 13,
+2901 and 13, 13093, 2023): 38 recordings of 5 mm thick PVC specimens with
+circular and rectangular defects (50–90 % material removed), cooling phase
+only, 181 s at 10 Hz. The split into 26 training, 6 validation and 6 test
+recordings follows the PT-Fusion study (Salah et al., *Sci. Rep.* 16, 12926,
+2026). As in that study, the sequences were processed with eighth-order
+thermographic signal reconstruction (TSR). Please cite the original dataset
+papers when using these data.
+
+### Folder layout
+
+All scripts are run from the repository root. Unpack the downloaded data so
+that each split sits in its own folder, for example for the experimental
+dataset (the folder `open_source_dataset/` is ignored by git):
 
 ```
 open_source_dataset/
 ├── training/
-│   ├── *.npz            # one file per sequence: 'data' [T, H, W] (ΔT), 'mask' [H, W] (depth)
+│   ├── *.npz            # original sequences (from the download)
 │   ├── data_bscans/     # created in step 2
 │   └── data_masks/      # created in step 2
 ├── validation/          # same structure
 ├── testing/             # same structure
 └── trained_models/      # created by the training script
 ```
-
-In each `.npz` file, `data` is the temperature rise above the initial
-temperature and `mask` is the defect depth map, normalised to the specimen
-thickness (0 = sound material).
 
 ## Usage
 
@@ -145,8 +189,8 @@ If you use this code, please cite:
 
 ```bibtex
 @article{jaworski2026bnet,
-  title   = {[Paper title]},
-  author  = {Jaworski, Konrad and others},
+  title   = {Thermal B-scans enable simultaneous reconstruction of subsurface defect depth and shape},
+  author  = {Jaworski, Konrad and Sobczak, Micha{\l} and Pieczonka, {\L}ukasz},
   journal = {Scientific Reports},
   year    = {2026},
   doi     = {[to be added]}
